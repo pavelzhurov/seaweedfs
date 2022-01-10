@@ -83,3 +83,9 @@ other/java/hdfs/dependency-reduced-pom.xml
 
 # binary file
 weed/weed
+
+# Test data
+test-*
+
+# k8s config
+seaweedfs-deploy.yaml

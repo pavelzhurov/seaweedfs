@@ -6,13 +6,14 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
-	"github.com/chrislusf/seaweedfs/weed/security"
 	"io"
 	"net/http"
 	"net/url"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/chrislusf/seaweedfs/weed/security"
 
 	"github.com/chrislusf/seaweedfs/weed/filer"
 	"github.com/pquerna/cachecontrol/cacheobject"
@@ -286,7 +287,7 @@ func (s3a *S3ApiServer) DeleteMultipleObjectsHandler(w http.ResponseWriter, r *h
 
 func (s3a *S3ApiServer) doDeleteEmptyDirectories(client filer_pb.SeaweedFilerClient, directoriesWithDeletion map[string]int) (newDirectoriesWithDeletion map[string]int) {
 	var allDirs []string
-	for dir, _ := range directoriesWithDeletion {
+	for dir := range directoriesWithDeletion {
 		allDirs = append(allDirs, dir)
 	}
 	sort.Slice(allDirs, func(i, j int) bool {

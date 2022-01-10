@@ -4,12 +4,13 @@ import (
 	"context"
 	"encoding/xml"
 	"fmt"
-	"github.com/chrislusf/seaweedfs/weed/filer"
-	"github.com/chrislusf/seaweedfs/weed/s3api/s3_constants"
-	"github.com/chrislusf/seaweedfs/weed/storage/needle"
 	"math"
 	"net/http"
 	"time"
+
+	"github.com/chrislusf/seaweedfs/weed/filer"
+	"github.com/chrislusf/seaweedfs/weed/s3api/s3_constants"
+	"github.com/chrislusf/seaweedfs/weed/storage/needle"
 
 	xhttp "github.com/chrislusf/seaweedfs/weed/s3api/http"
 	"github.com/chrislusf/seaweedfs/weed/s3api/s3err"
@@ -111,12 +112,13 @@ func (s3a *S3ApiServer) PutBucketHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if s3a.iam.isEnabled() {
-		if _, errCode = s3a.iam.authRequest(r, s3_constants.ACTION_ADMIN); errCode != s3err.ErrNone {
-			s3err.WriteErrorResponse(w, r, errCode)
-			return
-		}
-	}
+	// Disable default authorization
+	// if s3a.iam.isEnabled() {
+	// 	if _, errCode = s3a.iam.authRequest(r, s3_constants.ACTION_ADMIN); errCode != s3err.ErrNone {
+	// 		s3err.WriteErrorResponse(w, r, errCode)
+	// 		return
+	// 	}
+	// }
 
 	fn := func(entry *filer_pb.Entry) {
 		if identityId := r.Header.Get(xhttp.AmzIdentityId); identityId != "" {
