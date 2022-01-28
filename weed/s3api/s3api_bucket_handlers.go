@@ -33,14 +33,14 @@ func (s3a *S3ApiServer) ListBucketsHandler(w http.ResponseWriter, r *http.Reques
 	glog.V(3).Infof("ListBucketsHandler")
 
 	var identity *Identity
-	var s3Err s3err.ErrorCode
-	if s3a.iam.isEnabled() {
-		identity, s3Err = s3a.iam.authUser(r)
-		if s3Err != s3err.ErrNone {
-			s3err.WriteErrorResponse(w, r, s3Err)
-			return
-		}
-	}
+	// Disable default authorization
+	// if s3a.iam.isEnabled() {
+	// 	identity, s3Err = s3a.iam.authUser(r)
+	// 	if s3Err != s3err.ErrNone {
+	// 		s3err.WriteErrorResponse(w, r, s3Err)
+	// 		return
+	// 	}
+	// }
 
 	var response ListAllMyBucketsResult
 
