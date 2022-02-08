@@ -308,9 +308,10 @@ func (iam *IdentityAccessManagement) parseJWT(r *http.Request) (*Identity, s3err
 		isTokenValid = true
 	}
 	if claims, ok := token.Claims.(jwt.MapClaims); ok && isTokenValid {
-		if username, ok := claims["preferred_username"].(string); ok {
+		if username, ok := claims["sub"].(string); ok {
 			identity = &Identity{
-				Name:        username,
+				// Knox doesn't support keyIDs with hyphens, but sub contains them. So, we replace them with underscores.
+				Name:        strings.Replace(username, "-", "_", -1),
 				Credentials: nil,
 				Actions:     nil,
 			}
