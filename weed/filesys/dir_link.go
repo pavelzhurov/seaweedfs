@@ -24,6 +24,10 @@ const (
 
 func (dir *Dir) Link(ctx context.Context, req *fuse.LinkRequest, old fs.Node) (fs.Node, error) {
 
+	if err := checkName(req.NewName); err != nil {
+		return nil, err
+	}
+
 	oldFile, ok := old.(*File)
 	if !ok {
 		glog.Errorf("old node is not a file: %+v", old)
@@ -53,6 +57,7 @@ func (dir *Dir) Link(ctx context.Context, req *fuse.LinkRequest, old fs.Node) (f
 	}
 
 	// CreateLink 1.2 : update new file to hardlink mode
+	oldEntry.Attributes.Mtime = time.Now().Unix()
 	request := &filer_pb.CreateEntryRequest{
 		Directory: dir.FullPath(),
 		Entry: &filer_pb.Entry{
@@ -93,7 +98,7 @@ func (dir *Dir) Link(ctx context.Context, req *fuse.LinkRequest, old fs.Node) (f
 	}
 
 	// create new file node
-	newNode := dir.newFile(req.NewName)
+	newNode := dir.newFile(req.NewName, 0)
 	newFile := newNode.(*File)
 
 	return newFile, err
@@ -101,6 +106,10 @@ func (dir *Dir) Link(ctx context.Context, req *fuse.LinkRequest, old fs.Node) (f
 }
 
 func (dir *Dir) Symlink(ctx context.Context, req *fuse.SymlinkRequest) (fs.Node, error) {
+
+	if err := checkName(req.NewName); err != nil {
+		return nil, err
+	}
 
 	glog.V(4).Infof("Symlink: %v/%v to %v", dir.FullPath(), req.NewName, req.Target)
 
@@ -136,7 +145,7 @@ func (dir *Dir) Symlink(ctx context.Context, req *fuse.SymlinkRequest) (fs.Node,
 		return nil
 	})
 
-	symlink := dir.newFile(req.NewName)
+	symlink := dir.newFile(req.NewName, os.ModeSymlink)
 
 	return symlink, err
 

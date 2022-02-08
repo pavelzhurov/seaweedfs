@@ -212,7 +212,7 @@ func genFileCopyTask(fileOrDir string, destPath string, fileCopyTaskChan chan Fi
 	if mode.IsDir() {
 		files, _ := os.ReadDir(fileOrDir)
 		for _, subFileOrDir := range files {
-			cleanedDestDirectory := filepath.Clean(destPath + fi.Name())
+			cleanedDestDirectory := destPath + fi.Name()
 			if err = genFileCopyTask(fileOrDir+"/"+subFileOrDir.Name(), cleanedDestDirectory+"/", fileCopyTaskChan); err != nil {
 				return err
 			}
@@ -482,7 +482,8 @@ func (worker *FileCopyWorker) uploadFileInChunks(task FileCopyTask, f *os.File, 
 				})
 			})
 			if err != nil {
-				fmt.Printf("Failed to assign from %v: %v\n", worker.options.masters, err)
+				uploadError = fmt.Errorf("Failed to assign from %v: %v\n", worker.options.masters, err)
+				return
 			}
 
 			targetUrl := "http://" + assignResult.Location.Url + "/" + assignResult.FileId

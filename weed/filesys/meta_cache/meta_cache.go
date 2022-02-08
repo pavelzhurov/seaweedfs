@@ -5,6 +5,7 @@ import (
 	"github.com/chrislusf/seaweedfs/weed/filer"
 	"github.com/chrislusf/seaweedfs/weed/filer/leveldb"
 	"github.com/chrislusf/seaweedfs/weed/glog"
+	"github.com/chrislusf/seaweedfs/weed/pb/filer_pb"
 	"github.com/chrislusf/seaweedfs/weed/util"
 	"github.com/chrislusf/seaweedfs/weed/util/bounded_tree"
 	"os"
@@ -18,16 +19,16 @@ type MetaCache struct {
 	// sync.RWMutex
 	visitedBoundary *bounded_tree.BoundedTree
 	uidGidMapper    *UidGidMapper
-	invalidateFunc  func(util.FullPath)
+	invalidateFunc  func(fullpath util.FullPath, entry *filer_pb.Entry)
 }
 
-func NewMetaCache(dbFolder string, baseDir util.FullPath, uidGidMapper *UidGidMapper, invalidateFunc func(util.FullPath)) *MetaCache {
+func NewMetaCache(dbFolder string, baseDir util.FullPath, uidGidMapper *UidGidMapper, invalidateFunc func(util.FullPath, *filer_pb.Entry)) *MetaCache {
 	return &MetaCache{
 		localStore:      openMetaStore(dbFolder),
 		visitedBoundary: bounded_tree.NewBoundedTree(baseDir),
 		uidGidMapper:    uidGidMapper,
-		invalidateFunc: func(fullpath util.FullPath) {
-			invalidateFunc(fullpath)
+		invalidateFunc: func(fullpath util.FullPath, entry *filer_pb.Entry) {
+			invalidateFunc(fullpath, entry)
 		},
 	}
 }
@@ -143,4 +144,11 @@ func (mc *MetaCache) Shutdown() {
 
 func (mc *MetaCache) mapIdFromFilerToLocal(entry *filer.Entry) {
 	entry.Attr.Uid, entry.Attr.Gid = mc.uidGidMapper.FilerToLocal(entry.Attr.Uid, entry.Attr.Gid)
+}
+
+func (mc *MetaCache) Debug() {
+	if debuggable, ok := mc.localStore.(filer.Debuggable); ok {
+		println("start debugging")
+		debuggable.Debug(os.Stderr)
+	}
 }

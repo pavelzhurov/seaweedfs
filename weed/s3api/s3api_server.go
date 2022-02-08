@@ -6,12 +6,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/chrislusf/seaweedfs/weed/filer"
 	"github.com/chrislusf/seaweedfs/weed/pb"
+	. "github.com/chrislusf/seaweedfs/weed/s3api/s3_constants"
+	"github.com/chrislusf/seaweedfs/weed/s3api/s3err"
 	"github.com/chrislusf/seaweedfs/weed/security"
 	"github.com/chrislusf/seaweedfs/weed/util"
-
-	"github.com/chrislusf/seaweedfs/weed/filer"
-	"github.com/chrislusf/seaweedfs/weed/s3api/s3err"
 	"github.com/gorilla/mux"
 	"google.golang.org/grpc"
 )
@@ -82,6 +82,13 @@ func (s3a *S3ApiServer) registerRouter(router *mux.Router) {
 		bucket.Methods("HEAD").Path("/{object:.+}").HandlerFunc(track(s3a.iam.Auth(s3a.HeadObjectHandler, "HeadObject", s3a), "GET"))
 		// HeadBucket
 		bucket.Methods("HEAD").HandlerFunc(track(s3a.iam.Auth(s3a.HeadBucketHandler, "HeadBucket", s3a), "GET"))
+		// each case should follow the next rule:
+		// - requesting object with query must precede any other methods
+		// - requesting object must precede any methods with buckets
+		// - requesting bucket with query must precede raw methods with buckets
+		// - requesting bucket must be processed in the end
+
+		// objects with query
 
 		// CopyObjectPart
 		bucket.Methods("PUT").Path("/{object:.+}").HeadersRegexp("X-Amz-Copy-Source", `.*?(\/|%2F).*?`).HandlerFunc(track(s3a.iam.Auth(s3a.CopyObjectPartHandler, "CopyObjectPart", s3a), "PUT")).Queries("partNumber", "{partNumber:[0-9]+}", "uploadId", "{uploadId:.*}")
@@ -113,6 +120,19 @@ func (s3a *S3ApiServer) registerRouter(router *mux.Router) {
 		bucket.Methods("PUT").Path("/{object:.+}").HandlerFunc(track(s3a.iam.Auth(s3a.PutObjectLegalHoldHandler, "PutObjectLegalHold", s3a), "PUT")).Queries("legal-hold", "")
 		// PutObjectLockConfiguration
 		bucket.Methods("PUT").Path("/{object:.+}").HandlerFunc(track(s3a.iam.Auth(s3a.PutObjectLockConfigurationHandler, "PutObjectLockConfiguration", s3a), "PUT")).Queries("object-lock", "")
+
+		// GetObjectACL
+		bucket.Methods("GET").Path("/{object:.+}").HandlerFunc(track(s3a.iam.Auth(s3a.GetObjectAclHandler, ACTION_READ, s3a), "GET")).Queries("acl", "")
+
+		// objects with query
+
+		// raw objects
+
+		// HeadObject
+		bucket.Methods("HEAD").Path("/{object:.+}").HandlerFunc(track(s3a.iam.Auth(s3a.HeadObjectHandler, ACTION_READ, s3a), "GET"))
+
+		// GetObject, but directory listing is not supported
+		bucket.Methods("GET").Path("/{object:.+}").HandlerFunc(track(s3a.iam.Auth(s3a.GetObjectHandler, ACTION_READ, s3a), "GET"))
 
 		// CopyObject
 		bucket.Methods("PUT").Path("/{object:.+}").HeadersRegexp("X-Amz-Copy-Source", ".*?(\\/|%2F).*?").HandlerFunc(track(s3a.iam.Auth(s3a.CopyObjectHandler, "CopyObject", s3a), "COPY"))
@@ -157,20 +177,10 @@ func (s3a *S3ApiServer) registerRouter(router *mux.Router) {
 		// DeleteBucket
 		bucket.Methods("DELETE").HandlerFunc(track(s3a.iam.Auth(s3a.DeleteBucketHandler, "DeleteBucket", s3a), "DELETE"))
 
-		/*
+		// ListObjectsV1 (Legacy)
+		bucket.Methods("GET").HandlerFunc(track(s3a.iam.Auth(s3a.ListObjectsV1Handler, ACTION_LIST, s3a), "LIST"))
 
-			// not implemented
-			// GetBucketLocation
-			bucket.Methods("GET").HandlerFunc(s3a.GetBucketLocationHandler).Queries("location", "")
-			// GetBucketPolicy
-			bucket.Methods("GET").HandlerFunc(s3a.GetBucketPolicyHandler).Queries("policy", "")
-			// GetObjectACL
-			bucket.Methods("GET").Path("/{object:.+}").HandlerFunc(s3a.GetObjectACLHandler).Queries("acl", "")
-			// PutBucketPolicy
-			bucket.Methods("PUT").HandlerFunc(s3a.PutBucketPolicyHandler).Queries("policy", "")
-			// DeleteBucketPolicy
-			bucket.Methods("DELETE").HandlerFunc(s3a.DeleteBucketPolicyHandler).Queries("policy", "")
-		*/
+		// raw buckets
 
 	}
 

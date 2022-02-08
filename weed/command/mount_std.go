@@ -6,6 +6,7 @@ package command
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"os/user"
 	"path"
@@ -33,6 +34,10 @@ import (
 )
 
 func runMount(cmd *Command, args []string) bool {
+
+	if *mountOptions.debug {
+		go http.ListenAndServe(fmt.Sprintf(":%d", *mountOptions.debugPort), nil)
+	}
 
 	grace.SetupProfiling(*mountCpuProfile, *mountMemProfile)
 	if *mountReadRetryTime < time.Second {
@@ -171,6 +176,7 @@ func RunMount(option *MountOptions, umask os.FileMode) bool {
 		fuse.NoAppleXattr(),
 		fuse.ExclCreate(),
 		fuse.DaemonTimeout("3600"),
+		fuse.AllowDev(),
 		fuse.AllowSUID(),
 		fuse.DefaultPermissions(),
 		fuse.MaxReadahead(1024 * 512),

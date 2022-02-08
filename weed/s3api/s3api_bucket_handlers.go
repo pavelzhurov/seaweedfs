@@ -311,3 +311,15 @@ func (s3a *S3ApiServer) DeleteBucketLifecycleHandler(w http.ResponseWriter, r *h
 	s3err.WriteEmptyResponse(w, r, http.StatusNoContent)
 
 }
+
+// GetBucketLocationHandler Get bucket location
+// https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetBucketLocation.html
+func (s3a *S3ApiServer) GetBucketLocationHandler(w http.ResponseWriter, r *http.Request) {
+	writeSuccessResponseXML(w, r, LocationConstraint{})
+}
+
+// GetBucketRequestPaymentHandler Get bucket location
+// https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetBucketRequestPayment.html
+func (s3a *S3ApiServer) GetBucketRequestPaymentHandler(w http.ResponseWriter, r *http.Request) {
+	writeSuccessResponseXML(w, r, RequestPaymentConfiguration{Payer: "BucketOwner"})
+}
