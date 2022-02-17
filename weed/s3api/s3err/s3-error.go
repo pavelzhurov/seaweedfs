@@ -59,4 +59,5 @@ var s3ErrorResponseMap = map[string]string{
 	"XAmzContentSHA256Mismatch":         "The provided 'x-amz-content-sha256' header does not match what was computed.",
 	// Add new API errors here.
 	"NoSuchCORSConfiguration": "The CORS configuration does not exist",
+	"MalformedACLError":       "The XML you provided was not well formed or did not validate against our published schema.",
 }
