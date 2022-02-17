@@ -1,11 +1,14 @@
 package s3api
 
 import (
+	"crypto/rsa"
 	"fmt"
 	"net/http"
 	"os"
 	"strings"
 	"sync"
+
+	"github.com/golang-jwt/jwt"
 
 	"github.com/chrislusf/seaweedfs/weed/filer"
 	"github.com/chrislusf/seaweedfs/weed/glog"
@@ -15,6 +18,7 @@ import (
 	xhttp "github.com/chrislusf/seaweedfs/weed/s3api/http"
 	"github.com/chrislusf/seaweedfs/weed/s3api/s3_constants"
 	"github.com/chrislusf/seaweedfs/weed/s3api/s3err"
+	"github.com/chrislusf/seaweedfs/weed/util"
 )
 
 type Action string
@@ -28,6 +32,7 @@ type IdentityAccessManagement struct {
 
 	identities []*Identity
 	domain     string
+	RSAPubKey  *rsa.PublicKey
 }
 
 type Identity struct {
@@ -72,8 +77,13 @@ func (action Action) getPermission() Permission {
 }
 
 func NewIdentityAccessManagement(option *S3ApiServerOption) *IdentityAccessManagement {
+	RSAParsedKey, err := jwt.ParseRSAPublicKeyFromPEM([]byte(option.JWTPublicKey))
+	if err != nil && option.JWTPublicKey != "" {
+		glog.Fatalf("Couldn't parse JWT Public Key! Error: %v", err)
+	}
 	iam := &IdentityAccessManagement{
-		domain: option.DomainName,
+		domain:    option.DomainName,
+		RSAPubKey: RSAParsedKey,
 	}
 	if option.Config != "" {
 		if err := iam.loadS3ApiConfigurationFromFile(option.Config); err != nil {
@@ -154,10 +164,17 @@ func (iam *IdentityAccessManagement) isEnabled() bool {
 
 func (iam *IdentityAccessManagement) lookupByAccessKey(accessKey string) (identity *Identity, cred *Credential, found bool) {
 
+	err := iam.syncIdentitiesFromKnox()
+	if err != nil {
+		glog.Warning("could not sync with vault")
+		glog.V(3).Infof("Vault error: %v", err)
+	}
 	iam.m.RLock()
 	defer iam.m.RUnlock()
 	for _, ident := range iam.identities {
+		glog.V(3).Infof("Identity: %+v", ident)
 		for _, cred := range ident.Credentials {
+			glog.V(3).Infof("\tCredential: %+v", cred)
 			// println("checking", ident.Name, cred.AccessKey)
 			if cred.AccessKey == accessKey {
 				return ident, cred, true
@@ -180,13 +197,12 @@ func (iam *IdentityAccessManagement) lookupAnonymous() (identity *Identity, foun
 }
 
 func (iam *IdentityAccessManagement) Auth(f http.HandlerFunc, action Action, s3api AuthS3API) http.HandlerFunc {
-
 	if !iam.isEnabled() {
 		return f
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
-		identity, errCode := iam.authRequest(r, action)
+		identity, errCode := iam.authRequest(r, action, s3api)
 		if errCode == s3err.ErrNone {
 			if identity != nil && identity.Name != "" {
 				r.Header.Set(xhttp.AmzIdentityId, identity.Name)
@@ -204,7 +220,7 @@ func (iam *IdentityAccessManagement) Auth(f http.HandlerFunc, action Action, s3a
 }
 
 // check whether the request has valid access keys
-func (iam *IdentityAccessManagement) authRequest(r *http.Request, action Action) (*Identity, s3err.ErrorCode) {
+func (iam *IdentityAccessManagement) authRequest(r *http.Request, action Action, s3api *S3ApiServer) (*Identity, s3err.ErrorCode) {
 	var identity *Identity
 	var s3Err s3err.ErrorCode
 	var found bool
@@ -230,8 +246,7 @@ func (iam *IdentityAccessManagement) authRequest(r *http.Request, action Action)
 		return identity, s3err.ErrNone
 	case authTypeJWT:
 		glog.V(3).Infof("jwt auth type")
-		r.Header.Set(xhttp.AmzAuthType, "Jwt")
-		return identity, s3err.ErrNotImplemented
+		identity, s3Err = iam.parseJWT(r)
 	case authTypeAnonymous:
 		authType = "Anonymous"
 		identity, found = iam.lookupAnonymous()
@@ -253,13 +268,64 @@ func (iam *IdentityAccessManagement) authRequest(r *http.Request, action Action)
 	glog.V(3).Infof("user name: %v actions: %v, action: %v", identity.Name, identity.Actions, action)
 
 	bucket, object := xhttp.GetBucketAndObject(r)
+	target := util.FullPath(fmt.Sprintf("%s/%s%s", s3api.option.BucketsPath, bucket, object))
+	dir, name := target.DirAndName()
 
-	if !identity.canDo(action, bucket, object) {
+	tags, err := s3api.getTags(dir, name)
+	if err != nil {
+		glog.Errorf("No tags for %s: %v", r.URL, err)
+	}
+
+	if !identity.authz(action, bucket, object, tags) {
 		return identity, s3err.ErrAccessDenied
 	}
 
 	return identity, s3err.ErrNone
 
+}
+
+func (iam *IdentityAccessManagement) parseJWT(r *http.Request) (*Identity, s3err.ErrorCode) {
+	var identity *Identity
+	tokenString := strings.Split(r.Header.Get("Authorization"), " ")[1]
+	var token *jwt.Token
+	var err error
+	var isTokenValid bool
+	if iam.RSAPubKey != nil {
+		token, err = jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+			// Validating expected alg:
+			if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
+				return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+			}
+			// RSA public key from Keycloak
+			return iam.RSAPubKey, nil
+		})
+		if err != nil {
+			glog.V(3).Infof("Error while parsing token: %v\nToken: %+v\n", err, token)
+			return nil, s3err.ErrMalformedCredentialDate
+		}
+		isTokenValid = token.Valid
+	} else {
+		token, err = jwt.Parse(tokenString, nil)
+		if token == nil {
+			glog.V(3).Infof("Error while parsing token: %v\nToken: %+v\n", err, token)
+			return nil, s3err.ErrMalformedCredentialDate
+		}
+		isTokenValid = true
+	}
+	if claims, ok := token.Claims.(jwt.MapClaims); ok && isTokenValid {
+		if username, ok := claims["sub"].(string); ok {
+			identity = &Identity{
+				// Knox doesn't support keyIDs with hyphens, but sub contains them. So, we replace them with underscores.
+				Name:        strings.Replace(username, "-", "_", -1),
+				Credentials: nil,
+				Actions:     nil,
+			}
+			return identity, s3err.ErrNone
+		}
+	}
+	glog.V(4).Infof("Something wrong with token: %v.", token)
+	glog.V(4).Infof("Is token valid? %v", token.Valid)
+	return nil, s3err.ErrMalformedCredentialDate
 }
 
 func (iam *IdentityAccessManagement) authUser(r *http.Request) (*Identity, s3err.ErrorCode) {

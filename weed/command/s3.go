@@ -3,9 +3,11 @@ package command
 import (
 	"context"
 	"fmt"
-	"github.com/chrislusf/seaweedfs/weed/s3api/s3err"
 	"net/http"
+	"os"
 	"time"
+
+	"github.com/chrislusf/seaweedfs/weed/s3api/s3err"
 
 	"github.com/chrislusf/seaweedfs/weed/pb"
 	"github.com/chrislusf/seaweedfs/weed/pb/filer_pb"
@@ -176,6 +178,11 @@ func (s3opt *S3Options) startS3Server() bool {
 
 	router := mux.NewRouter().SkipClean(true)
 
+	RSAPubKey, ok := os.LookupEnv("RSA_PUBLIC_KEY")
+	if !ok {
+		glog.Warning("Authentication Public Key is not set! JWT authentication will accept all tokens. Don't use in production environment!")
+	}
+
 	_, s3ApiServer_err := s3api.NewS3ApiServer(router, &s3api.S3ApiServerOption{
 		Filer:            filerAddress,
 		Port:             *s3opt.port,
@@ -184,6 +191,7 @@ func (s3opt *S3Options) startS3Server() bool {
 		BucketsPath:      filerBucketsPath,
 		GrpcDialOption:   grpcDialOption,
 		AllowEmptyFolder: *s3opt.allowEmptyFolder,
+		JWTPublicKey:     RSAPubKey,
 	})
 	if s3ApiServer_err != nil {
 		glog.Fatalf("S3 API Server startup error: %v", s3ApiServer_err)
