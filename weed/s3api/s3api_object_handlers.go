@@ -115,7 +115,7 @@ func (s3a *S3ApiServer) PutObjectHandler(w http.ResponseWriter, r *http.Request)
 
 	var username, id string
 	if s3a.iam.isEnabled() {
-		if ident, errCode := s3a.iam.authRequest(r, s3_constants.ACTION_ADMIN); errCode != s3err.ErrNone {
+		if ident, errCode := s3a.iam.authRequest(r, s3_constants.ACTION_ADMIN, s3a); errCode != s3err.ErrNone {
 			s3err.WriteErrorResponse(w, r, errCode)
 			return
 		} else {

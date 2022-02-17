@@ -49,6 +49,11 @@ type Credential struct {
 type AuthS3API interface {
 	getACL(parentDirectoryPath string, entryName string) (ac_policy AccessControlPolicyMarshal, err error)
 	getTags(parentDirectoryPath string, entryName string) (tags map[string]string, err error)
+	getBucketsPath() string
+}
+
+func (s3a *S3ApiServer) getBucketsPath() string {
+	return s3a.option.BucketsPath
 }
 
 func (action Action) isAdmin() bool {
@@ -220,7 +225,7 @@ func (iam *IdentityAccessManagement) Auth(f http.HandlerFunc, action Action, s3a
 }
 
 // check whether the request has valid access keys
-func (iam *IdentityAccessManagement) authRequest(r *http.Request, action Action, s3api *S3ApiServer) (*Identity, s3err.ErrorCode) {
+func (iam *IdentityAccessManagement) authRequest(r *http.Request, action Action, s3api AuthS3API) (*Identity, s3err.ErrorCode) {
 	var identity *Identity
 	var s3Err s3err.ErrorCode
 	var found bool
@@ -268,7 +273,7 @@ func (iam *IdentityAccessManagement) authRequest(r *http.Request, action Action,
 	glog.V(3).Infof("user name: %v actions: %v, action: %v", identity.Name, identity.Actions, action)
 
 	bucket, object := xhttp.GetBucketAndObject(r)
-	target := util.FullPath(fmt.Sprintf("%s/%s%s", s3api.option.BucketsPath, bucket, object))
+	target := util.FullPath(fmt.Sprintf("%s/%s%s", s3api.getBucketPath(), bucket, object))
 	dir, name := target.DirAndName()
 
 	tags, err := s3api.getTags(dir, name)
