@@ -273,7 +273,7 @@ func (iam *IdentityAccessManagement) authRequest(r *http.Request, action Action,
 	glog.V(3).Infof("user name: %v actions: %v, action: %v", identity.Name, identity.Actions, action)
 
 	bucket, object := xhttp.GetBucketAndObject(r)
-	target := util.FullPath(fmt.Sprintf("%s/%s%s", s3api.getBucketPath(), bucket, object))
+	target := util.FullPath(fmt.Sprintf("%s/%s%s", s3api.getBucketsPath(), bucket, object))
 	dir, name := target.DirAndName()
 
 	tags, err := s3api.getTags(dir, name)
