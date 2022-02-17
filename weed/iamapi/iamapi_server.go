@@ -6,18 +6,18 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"net/http"
+
 	"github.com/chrislusf/seaweedfs/weed/filer"
 	"github.com/chrislusf/seaweedfs/weed/pb"
 	"github.com/chrislusf/seaweedfs/weed/pb/filer_pb"
 	"github.com/chrislusf/seaweedfs/weed/pb/iam_pb"
 	"github.com/chrislusf/seaweedfs/weed/s3api"
-	. "github.com/chrislusf/seaweedfs/weed/s3api/s3_constants"
 	"github.com/chrislusf/seaweedfs/weed/s3api/s3err"
 	"github.com/chrislusf/seaweedfs/weed/util"
 	"github.com/chrislusf/seaweedfs/weed/wdclient"
 	"github.com/gorilla/mux"
 	"google.golang.org/grpc"
-	"net/http"
 )
 
 type IamS3ApiConfig interface {
@@ -68,7 +68,7 @@ func (iama *IamApiServer) registerRouter(router *mux.Router) {
 	// ListBuckets
 
 	// apiRouter.Methods("GET").Path("/").HandlerFunc(track(s3a.iam.Auth(s3a.ListBucketsHandler, ACTION_ADMIN), "LIST"))
-	apiRouter.Methods("POST").Path("/").HandlerFunc(iama.iam.Auth(iama.DoActions, ACTION_ADMIN))
+	apiRouter.Methods("POST").Path("/").HandlerFunc(iama.DoActions)
 	//
 	// NotFound
 	apiRouter.NotFoundHandler = http.HandlerFunc(s3err.NotFoundHandler)
