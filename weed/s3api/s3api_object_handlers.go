@@ -19,6 +19,7 @@ import (
 	"github.com/pquerna/cachecontrol/cacheobject"
 
 	xhttp "github.com/chrislusf/seaweedfs/weed/s3api/http"
+	"github.com/chrislusf/seaweedfs/weed/s3api/s3_constants"
 	"github.com/chrislusf/seaweedfs/weed/s3api/s3err"
 
 	"github.com/chrislusf/seaweedfs/weed/glog"
@@ -36,6 +37,19 @@ func init() {
 		MaxIdleConns:        1024,
 		MaxIdleConnsPerHost: 1024,
 	}}
+}
+
+func (s3a *S3ApiServer) checkObject(r *http.Request, parentDirectoryPath string, entryName string) s3err.ErrorCode {
+	entry, err := s3a.getEntry(parentDirectoryPath, entryName)
+	if entry == nil || err == filer_pb.ErrNotFound {
+		// There is no Object not found error in AWS doc
+		return s3err.ErrAccessDenied
+	}
+
+	if !s3a.hasAccess(r, entry) {
+		return s3err.ErrAccessDenied
+	}
+	return s3err.ErrNone
 }
 
 func mimeDetect(r *http.Request, dataReader io.Reader) io.ReadCloser {
@@ -99,8 +113,53 @@ func (s3a *S3ApiServer) PutObjectHandler(w http.ResponseWriter, r *http.Request)
 	}
 	defer dataReader.Close()
 
+	var username, id string
+	if s3a.iam.isEnabled() {
+		if ident, errCode := s3a.iam.authRequest(r, s3_constants.ACTION_ADMIN); errCode != s3err.ErrNone {
+			s3err.WriteErrorResponse(w, r, errCode)
+			return
+		} else {
+			username = ident.Name
+			id = ident.Credentials[0].AccessKey
+		}
+	}
+
+	var identityId string
+	if identityId = r.Header.Get(xhttp.AmzIdentityId); identityId != "" {
+		if username == "" {
+			username = identityId
+		}
+		if id == "" {
+			id = identityId
+		}
+	} else {
+		if username == "" {
+			username = "anonymous"
+		}
+		if id == "" {
+			id = "anonymous"
+		}
+	}
+
+	ac_policy, err := xml.Marshal(defaultACPolicyTemplate.CreateACPolicyFromTemplate(id, username))
+	if err != nil {
+		glog.Errorf("PutObjectHandler create default Access Policy: %v", err)
+	}
+
+	fn := func(entry *filer_pb.Entry) {
+		if entry.Extended == nil {
+			entry.Extended = make(map[string][]byte)
+		}
+
+		if identityId != "" {
+			entry.Extended[xhttp.AmzIdentityId] = []byte(identityId)
+		}
+		entry.Extended[S3ACL_KEY] = ac_policy
+		glog.V(4).Infof("Created default access control policy. Object %s is owned by %s", bucket+object, username)
+	}
+
 	if strings.HasSuffix(object, "/") {
-		if err := s3a.mkdir(s3a.option.BucketsPath, bucket+object, nil); err != nil {
+		if err := s3a.mkdir(s3a.option.BucketsPath, bucket+object, fn); err != nil {
 			s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
 			return
 		}
@@ -119,6 +178,16 @@ func (s3a *S3ApiServer) PutObjectHandler(w http.ResponseWriter, r *http.Request)
 		}
 
 		setEtag(w, etag)
+
+		target := util.FullPath(fmt.Sprintf("%s/%s%s", s3a.option.BucketsPath, bucket, object))
+		dir, name := target.DirAndName()
+		err = s3a.setACL(dir, name, ac_policy)
+		if err != nil {
+			glog.Errorf("PutObjectHandler create default Access Policy: %v", err)
+			s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
+			return
+		}
+		glog.V(4).Infof("Created default access control policy. Object %s is owned by %s", bucket+object, username)
 	}
 
 	writeSuccessResponseEmpty(w, r)

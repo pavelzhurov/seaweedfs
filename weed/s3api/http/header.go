@@ -17,9 +17,10 @@
 package http
 
 import (
-	"github.com/gorilla/mux"
 	"net/http"
 	"strings"
+
+	"github.com/gorilla/mux"
 )
 
 // Standard S3 HTTP request constants
@@ -33,6 +34,9 @@ const (
 	// S3 object tagging
 	AmzObjectTagging = "X-Amz-Tagging"
 	AmzTagCount      = "x-amz-tagging-count"
+
+	// S3 ACL
+	AmzACL = "x-amz-acl"
 )
 
 // Non-Standard S3 HTTP request constants

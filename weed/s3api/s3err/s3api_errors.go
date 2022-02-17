@@ -102,6 +102,8 @@ const (
 
 	ErrExistingObjectIsDirectory
 	ErrExistingObjectIsFile
+	ErrMalformedACL
+	ErrInvalidObjectState
 )
 
 // error code to APIError structure, these fields carry respective
@@ -388,6 +390,16 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		Code:           "ExistingObjectIsFile",
 		Description:    "Existing Object is a file.",
 		HTTPStatusCode: http.StatusConflict,
+	},
+	ErrMalformedACL: {
+		Code:           "MalformedACLError",
+		Description:    "The XML you provided was not well formed or did not validate against our published schema.",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrInvalidObjectState: {
+		Code:           "InvalidObjectState",
+		Description:    "The operation is not valid for the current state of the object.",
+		HTTPStatusCode: http.StatusForbidden,
 	},
 }
 

@@ -11,6 +11,7 @@ import (
 	"github.com/chrislusf/seaweedfs/weed/filer"
 	"github.com/chrislusf/seaweedfs/weed/s3api/s3_constants"
 	"github.com/chrislusf/seaweedfs/weed/storage/needle"
+	"github.com/chrislusf/seaweedfs/weed/util"
 
 	xhttp "github.com/chrislusf/seaweedfs/weed/s3api/http"
 	"github.com/chrislusf/seaweedfs/weed/s3api/s3err"
@@ -112,21 +113,51 @@ func (s3a *S3ApiServer) PutBucketHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Disable default authorization
-	// if s3a.iam.isEnabled() {
-	// 	if _, errCode = s3a.iam.authRequest(r, s3_constants.ACTION_ADMIN); errCode != s3err.ErrNone {
-	// 		s3err.WriteErrorResponse(w, r, errCode)
-	// 		return
-	// 	}
-	// }
+
+	var username, id string
+//  Disable default authorization
+// 	if s3a.iam.isEnabled() {
+// 		if ident, errCode := s3a.iam.authRequest(r, s3_constants.ACTION_ADMIN); errCode != s3err.ErrNone {
+// 			s3err.WriteErrorResponse(w, r, errCode)
+// 			return
+// 		} else {
+// 			username = ident.Name
+// 			id = ident.Credentials[0].AccessKey
+// 		}
+// 	}
+
+	var identityId string
+	if identityId = r.Header.Get(xhttp.AmzIdentityId); identityId != "" {
+		if username == "" {
+			username = identityId
+		}
+		if id == "" {
+			id = identityId
+		}
+	} else {
+		if username == "" {
+			username = "anonymous"
+		}
+		if id == "" {
+			id = "anonymous"
+		}
+	}
 
 	fn := func(entry *filer_pb.Entry) {
-		if identityId := r.Header.Get(xhttp.AmzIdentityId); identityId != "" {
-			if entry.Extended == nil {
-				entry.Extended = make(map[string][]byte)
-			}
+		if entry.Extended == nil {
+			entry.Extended = make(map[string][]byte)
+		}
+
+		if identityId != "" {
 			entry.Extended[xhttp.AmzIdentityId] = []byte(identityId)
 		}
+
+		ac_policy, err := xml.Marshal(defaultACPolicyTemplate.CreateACPolicyFromTemplate(id, username))
+		if err != nil {
+			glog.Errorf("PutBucketHandler create default Access Policy: %v", err)
+		}
+		entry.Extended[S3ACL_KEY] = ac_policy
+		glog.V(4).Infof("Created default access control policy. Bucket %s is owned by %s", bucket, username)
 	}
 
 	// create the folder for bucket, but lazily create actual collection
@@ -162,6 +193,11 @@ func (s3a *S3ApiServer) DeleteBucketHandler(w http.ResponseWriter, r *http.Reque
 
 		return nil
 	})
+
+	if err != nil {
+		s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
+		return
+	}
 
 	err = s3a.rm(s3a.option.BucketsPath, bucket, false, true)
 
@@ -228,32 +264,76 @@ func (s3a *S3ApiServer) GetBucketAclHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	response := AccessControlPolicy{}
-	for _, ident := range s3a.iam.identities {
-		if len(ident.Credentials) == 0 {
-			continue
+	target := util.FullPath(fmt.Sprintf("%s/%s", s3a.option.BucketsPath, bucket))
+	dir, name := target.DirAndName()
+
+	response, err := s3a.getACL(dir, name)
+	glog.V(4).Infof("Bucket policy: %+v", response)
+	if err != nil {
+		// For backward compabitility use old bucket ACL implementation, if bucket doesn't have AccessPolicy
+		response = AccessControlPolicyMarshal{}
+		response.XMLName = xml.Name{
+			Space: "http://s3.amazonaws.com/doc/2006-03-01/",
+			Local: "AccessControlPolicy",
 		}
-		for _, action := range ident.Actions {
-			if !action.overBucket(bucket) || action.getPermission() == "" {
+		for _, ident := range s3a.iam.identities {
+			if len(ident.Credentials) == 0 {
 				continue
 			}
-			id := ident.Credentials[0].AccessKey
-			if response.Owner.DisplayName == "" && action.isOwner(bucket) && len(ident.Credentials) > 0 {
-				response.Owner.DisplayName = ident.Name
-				response.Owner.ID = id
+			for _, action := range ident.Actions {
+				if !action.overBucket(bucket) || action.getPermission() == "" {
+					continue
+				}
+				id := ident.Credentials[0].AccessKey
+				if response.Owner.DisplayName == "" && action.isOwner(bucket) && len(ident.Credentials) > 0 {
+					response.Owner.DisplayName = ident.Name
+					response.Owner.ID = id
+				}
+				response.AccessControlList.Grant = append(response.AccessControlList.Grant, Grant{
+					Grantee: Grantee{
+						ID:          id,
+						DisplayName: ident.Name,
+						Type:        "CanonicalUser",
+						XMLXSI:      "CanonicalUser",
+						XMLNS:       "http://www.w3.org/2001/XMLSchema-instance"},
+					Permission: action.getPermission(),
+				})
 			}
-			response.AccessControlList.Grant = append(response.AccessControlList.Grant, Grant{
-				Grantee: Grantee{
-					ID:          id,
-					DisplayName: ident.Name,
-					Type:        "CanonicalUser",
-					XMLXSI:      "CanonicalUser",
-					XMLNS:       "http://www.w3.org/2001/XMLSchema-instance"},
-				Permission: action.getPermission(),
-			})
 		}
 	}
 	writeSuccessResponseXML(w, r, response)
+}
+
+// PutBucketAclHandler Put bucket ACL
+// https://docs.aws.amazon.com/AmazonS3/latest/API/API_PutBucketAcl.html
+func (s3a *S3ApiServer) PutBucketAclHandler(w http.ResponseWriter, r *http.Request) {
+	// collect parameters
+	bucket, _ := xhttp.GetBucketAndObject(r)
+	glog.V(3).Infof("PutBucketAclHandler %s", bucket)
+
+	if err := s3a.checkBucket(r, bucket); err != s3err.ErrNone {
+		s3err.WriteErrorResponse(w, r, err)
+		return
+	}
+
+	target := util.FullPath(fmt.Sprintf("%s/%s", s3a.option.BucketsPath, bucket))
+	dir, name := target.DirAndName()
+
+	ac_policy, err := getBodyFromRequest(r)
+	if err != nil {
+		glog.V(3).Infof("Error while obtaining xml from request: %v", err)
+		s3err.WriteErrorResponse(w, r, s3err.ErrMalformedXML)
+		return
+	}
+
+	err = s3a.setACL(dir, name, ac_policy)
+	if err != nil {
+		glog.V(3).Infof("Error while setting policy: %v", err)
+		s3err.WriteErrorResponse(w, r, s3err.ErrMalformedACL)
+		return
+	}
+	glog.V(4).Infof("Bucket policy created: %s", ac_policy)
+	writeSuccessResponseEmpty(w, r)
 }
 
 // GetBucketLifecycleConfigurationHandler Get Bucket Lifecycle configuration
@@ -261,7 +341,7 @@ func (s3a *S3ApiServer) GetBucketAclHandler(w http.ResponseWriter, r *http.Reque
 func (s3a *S3ApiServer) GetBucketLifecycleConfigurationHandler(w http.ResponseWriter, r *http.Request) {
 	// collect parameters
 	bucket, _ := xhttp.GetBucketAndObject(r)
-	glog.V(3).Infof("GetBucketAclHandler %s", bucket)
+	glog.V(3).Infof("GetBucketLifecycleConfigurationHandler %s", bucket)
 
 	if err := s3a.checkBucket(r, bucket); err != s3err.ErrNone {
 		s3err.WriteErrorResponse(w, r, err)

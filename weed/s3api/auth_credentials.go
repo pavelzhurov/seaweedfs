@@ -46,6 +46,11 @@ type Credential struct {
 	SecretKey string
 }
 
+type AuthS3API interface {
+	getACL(parentDirectoryPath string, entryName string) (ac_policy AccessControlPolicyMarshal, err error)
+	getTags(parentDirectoryPath string, entryName string) (tags map[string]string, err error)
+}
+
 func (action Action) isAdmin() bool {
 	return strings.HasPrefix(string(action), s3_constants.ACTION_ADMIN)
 }
@@ -191,7 +196,7 @@ func (iam *IdentityAccessManagement) lookupAnonymous() (identity *Identity, foun
 	return nil, false
 }
 
-func (iam *IdentityAccessManagement) Auth(f http.HandlerFunc, action Action, s3api *S3ApiServer) http.HandlerFunc {
+func (iam *IdentityAccessManagement) Auth(f http.HandlerFunc, action Action, s3api AuthS3API) http.HandlerFunc {
 	if !iam.isEnabled() {
 		return f
 	}
