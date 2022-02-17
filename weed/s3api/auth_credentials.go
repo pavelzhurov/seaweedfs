@@ -18,7 +18,6 @@ import (
 	xhttp "github.com/chrislusf/seaweedfs/weed/s3api/http"
 	"github.com/chrislusf/seaweedfs/weed/s3api/s3_constants"
 	"github.com/chrislusf/seaweedfs/weed/s3api/s3err"
-	"github.com/chrislusf/seaweedfs/weed/util"
 )
 
 type Action string
@@ -272,18 +271,18 @@ func (iam *IdentityAccessManagement) authRequest(r *http.Request, action Action,
 
 	glog.V(3).Infof("user name: %v actions: %v, action: %v", identity.Name, identity.Actions, action)
 
-	bucket, object := xhttp.GetBucketAndObject(r)
-	target := util.FullPath(fmt.Sprintf("%s/%s%s", s3api.getBucketPath(), bucket, object))
-	dir, name := target.DirAndName()
+	// bucket, object := xhttp.GetBucketAndObject(r)
+	// target := util.FullPath(fmt.Sprintf("%s/%s%s", s3api.getBucketsPath(), bucket, object))
+	// dir, name := target.DirAndName()
 
-	tags, err := s3api.getTags(dir, name)
-	if err != nil {
-		glog.Errorf("No tags for %s: %v", r.URL, err)
-	}
+	// tags, err := s3api.getTags(dir, name)
+	// if err != nil {
+	// 	glog.Errorf("No tags for %s: %v", r.URL, err)
+	// }
 
-	if !identity.authz(action, bucket, object, tags) {
-		return identity, s3err.ErrAccessDenied
-	}
+	// if !identity.authz(action, bucket, object, tags) {
+	// 	return identity, s3err.ErrAccessDenied
+	// }
 
 	return identity, s3err.ErrNone
 
