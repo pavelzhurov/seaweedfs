@@ -113,18 +113,16 @@ func (s3a *S3ApiServer) PutBucketHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-
 	var username, id string
-//  Disable default authorization
-// 	if s3a.iam.isEnabled() {
-// 		if ident, errCode := s3a.iam.authRequest(r, s3_constants.ACTION_ADMIN); errCode != s3err.ErrNone {
-// 			s3err.WriteErrorResponse(w, r, errCode)
-// 			return
-// 		} else {
-// 			username = ident.Name
-// 			id = ident.Credentials[0].AccessKey
-// 		}
-// 	}
+	if s3a.iam.isEnabled() {
+		if ident, errCode := s3a.iam.authRequest(r, s3_constants.ACTION_ADMIN, s3a); errCode != s3err.ErrNone {
+			s3err.WriteErrorResponse(w, r, errCode)
+			return
+		} else {
+			username = ident.Name
+			id = ident.Credentials[0].AccessKey
+		}
+	}
 
 	var identityId string
 	if identityId = r.Header.Get(xhttp.AmzIdentityId); identityId != "" {
