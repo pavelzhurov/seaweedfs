@@ -8,7 +8,6 @@ import (
 
 	"github.com/chrislusf/seaweedfs/weed/filer"
 	"github.com/chrislusf/seaweedfs/weed/pb"
-	. "github.com/chrislusf/seaweedfs/weed/s3api/s3_constants"
 	"github.com/chrislusf/seaweedfs/weed/s3api/s3err"
 	"github.com/chrislusf/seaweedfs/weed/security"
 	"github.com/chrislusf/seaweedfs/weed/util"
@@ -78,10 +77,6 @@ func (s3a *S3ApiServer) registerRouter(router *mux.Router) {
 
 	for _, bucket := range routers {
 
-		// HeadObject
-		bucket.Methods("HEAD").Path("/{object:.+}").HandlerFunc(track(s3a.iam.Auth(s3a.HeadObjectHandler, "HeadObject", s3a), "GET"))
-		// HeadBucket
-		bucket.Methods("HEAD").HandlerFunc(track(s3a.iam.Auth(s3a.HeadBucketHandler, "HeadBucket", s3a), "GET"))
 		// each case should follow the next rule:
 		// - requesting object with query must precede any other methods
 		// - requesting object must precede any methods with buckets
@@ -122,63 +117,84 @@ func (s3a *S3ApiServer) registerRouter(router *mux.Router) {
 		bucket.Methods("PUT").Path("/{object:.+}").HandlerFunc(track(s3a.iam.Auth(s3a.PutObjectLockConfigurationHandler, "PutObjectLockConfiguration", s3a), "PUT")).Queries("object-lock", "")
 
 		// GetObjectACL
-		bucket.Methods("GET").Path("/{object:.+}").HandlerFunc(track(s3a.iam.Auth(s3a.GetObjectAclHandler, ACTION_READ, s3a), "GET")).Queries("acl", "")
+		bucket.Methods("GET").Path("/{object:.+}").HandlerFunc(track(s3a.iam.Auth(s3a.GetObjectAclHandler, "GetObjectAcl", s3a), "GET")).Queries("acl", "")
 
 		// objects with query
 
 		// raw objects
 
 		// HeadObject
-		bucket.Methods("HEAD").Path("/{object:.+}").HandlerFunc(track(s3a.iam.Auth(s3a.HeadObjectHandler, ACTION_READ, s3a), "GET"))
+		bucket.Methods("HEAD").Path("/{object:.+}").HandlerFunc(track(s3a.iam.Auth(s3a.HeadObjectHandler, "HeadObject", s3a), "GET"))
 
 		// GetObject, but directory listing is not supported
-		bucket.Methods("GET").Path("/{object:.+}").HandlerFunc(track(s3a.iam.Auth(s3a.GetObjectHandler, ACTION_READ, s3a), "GET"))
+		bucket.Methods("GET").Path("/{object:.+}").HandlerFunc(track(s3a.iam.Auth(s3a.GetObjectHandler, "GetObject", s3a), "GET"))
 
 		// CopyObject
 		bucket.Methods("PUT").Path("/{object:.+}").HeadersRegexp("X-Amz-Copy-Source", ".*?(\\/|%2F).*?").HandlerFunc(track(s3a.iam.Auth(s3a.CopyObjectHandler, "CopyObject", s3a), "COPY"))
 		// PutObject
 		bucket.Methods("PUT").Path("/{object:.+}").HandlerFunc(track(s3a.iam.Auth(s3a.PutObjectHandler, "PutObject", s3a), "PUT"))
-
 		// DeleteObject
 		bucket.Methods("DELETE").Path("/{object:.+}").HandlerFunc(track(s3a.iam.Auth(s3a.DeleteObjectHandler, "DeleteObject", s3a), "DELETE"))
 
-		// ListObjectsV2
-		bucket.Methods("GET").HandlerFunc(track(s3a.iam.Auth(s3a.ListObjectsV2Handler, "ListObjects", s3a), "LIST")).Queries("list-type", "2")
-		// GetObject, but directory listing is not supported
-		bucket.Methods("GET").Path("/{object:.+}").HandlerFunc(track(s3a.iam.Auth(s3a.GetObjectHandler, "GetObject", s3a), "GET"))
+		// raw objects
 
-		// PostPolicy
-		bucket.Methods("POST").HeadersRegexp("Content-Type", "multipart/form-data*").HandlerFunc(track(s3a.iam.Auth(s3a.PostPolicyBucketHandler, "PostPolicyBucket", s3a), "POST"))
+		// buckets with query
 
 		// DeleteMultipleObjects
 		bucket.Methods("POST").HandlerFunc(track(s3a.iam.Auth(s3a.DeleteMultipleObjectsHandler, "DeleteMultipleObjects", s3a), "DELETE")).Queries("delete", "")
 
 		// GetBucketACL
-		bucket.Methods("GET").HandlerFunc(s3a.iam.Auth(s3a.GetBucketAclHandler, "GetBucketAcl", s3a)).Queries("acl", "")
+		bucket.Methods("GET").HandlerFunc(track(s3a.iam.Auth(s3a.GetBucketAclHandler, "GetBucketAcl", s3a), "GET")).Queries("acl", "")
+		// PutBucketACL
+		bucket.Methods("PUT").HandlerFunc(track(s3a.iam.Auth(s3a.PutBucketAclHandler, "PutBucketAcl", s3a), "PUT")).Queries("acl", "")
 
-		// GetObjectACL
-		bucket.Methods("GET").Path("/{object:.+}").HandlerFunc(s3a.iam.Auth(s3a.GetObjectAclHandler, "GetObjectAcl", s3a)).Queries("acl", "")
+		// GetBucketPolicy
+		bucket.Methods("GET").HandlerFunc(track(s3a.iam.Auth(s3a.GetBucketPolicyHandler, "GetBucketPolicy", s3a), "GET")).Queries("policy", "")
+		// PutBucketPolicy
+		bucket.Methods("PUT").HandlerFunc(track(s3a.iam.Auth(s3a.PutBucketPolicyHandler, "PutBucketPolicy", s3a), "PUT")).Queries("policy", "")
+		// DeleteBucketPolicy
+		bucket.Methods("DELETE").HandlerFunc(track(s3a.iam.Auth(s3a.DeleteBucketPolicyHandler, "DeleteBucketPolicy", s3a), "DELETE")).Queries("policy", "")
+
+		// GetBucketCors
+		bucket.Methods("GET").HandlerFunc(track(s3a.iam.Auth(s3a.GetBucketCorsHandler, "GetBucketCors", s3a), "GET")).Queries("cors", "")
+		// PutBucketCors
+		bucket.Methods("PUT").HandlerFunc(track(s3a.iam.Auth(s3a.PutBucketCorsHandler, "PutBucketCors", s3a), "PUT")).Queries("cors", "")
+		// DeleteBucketCors
+		bucket.Methods("DELETE").HandlerFunc(track(s3a.iam.Auth(s3a.DeleteBucketCorsHandler, "DeleteBucketCors", s3a), "DELETE")).Queries("cors", "")
 
 		// GetBucketLifecycleConfiguration
-		bucket.Methods("GET").HandlerFunc(s3a.iam.Auth(s3a.GetBucketLifecycleConfigurationHandler, "GetBucketLifecycleConfiguration", s3a)).Queries("lifecycle", "")
-
+		bucket.Methods("GET").HandlerFunc(track(s3a.iam.Auth(s3a.GetBucketLifecycleConfigurationHandler, "GetBucketLifecycleConfiguration", s3a), "GET")).Queries("lifecycle", "")
 		// PutBucketLifecycleConfiguration
-		bucket.Methods("PUT").HandlerFunc(s3a.iam.Auth(s3a.PutBucketLifecycleConfigurationHandler, "PutBucketLifecycleConfiguration", s3a)).Queries("lifecycle", "")
-
+		bucket.Methods("PUT").HandlerFunc(track(s3a.iam.Auth(s3a.PutBucketLifecycleConfigurationHandler, "PutBucketLifecycleConfiguration", s3a), "PUT")).Queries("lifecycle", "")
 		// DeleteBucketLifecycleConfiguration
-		bucket.Methods("DELETE").HandlerFunc(s3a.iam.Auth(s3a.DeleteBucketLifecycleHandler, "DeleteBucketLifecycle", s3a)).Queries("lifecycle", "")
+		bucket.Methods("DELETE").HandlerFunc(track(s3a.iam.Auth(s3a.DeleteBucketLifecycleHandler, "DeleteBucketLifecycle", s3a), "DELETE")).Queries("lifecycle", "")
 
-		// ListObjectsV1 (Legacy)
-		bucket.Methods("GET").HandlerFunc(track(s3a.iam.Auth(s3a.ListObjectsV1Handler, "ListObjects", s3a), "LIST"))
+		// GetBucketLocation
+		bucket.Methods("GET").HandlerFunc(track(s3a.iam.Auth(s3a.GetBucketLocationHandler, "GetBucketLocation", s3a), "GET")).Queries("location", "")
+
+		// GetBucketRequestPayment
+		bucket.Methods("GET").HandlerFunc(track(s3a.iam.Auth(s3a.GetBucketRequestPaymentHandler, "GetBucketRequestPayment", s3a), "GET")).Queries("requestPayment", "")
+
+		// ListObjectsV2
+		bucket.Methods("GET").HandlerFunc(track(s3a.iam.Auth(s3a.ListObjectsV2Handler, "ListObjectsV2", s3a), "LIST")).Queries("list-type", "2")
+
+		// buckets with query
+
+		// raw buckets
+
+		// PostPolicy
+		bucket.Methods("POST").HeadersRegexp("Content-Type", "multipart/form-data*").HandlerFunc(track(s3a.iam.Auth(s3a.PostPolicyBucketHandler, "PostPolicyBucket", s3a), "POST"))
+
+		// HeadBucket
+		bucket.Methods("HEAD").HandlerFunc(track(s3a.iam.Auth(s3a.HeadBucketHandler, "HeadBucket", s3a), "GET"))
 
 		// PutBucket
 		bucket.Methods("PUT").HandlerFunc(track(s3a.iam.Auth(s3a.PutBucketHandler, "PutBucket", s3a), "PUT"))
-
 		// DeleteBucket
 		bucket.Methods("DELETE").HandlerFunc(track(s3a.iam.Auth(s3a.DeleteBucketHandler, "DeleteBucket", s3a), "DELETE"))
 
 		// ListObjectsV1 (Legacy)
-		bucket.Methods("GET").HandlerFunc(track(s3a.iam.Auth(s3a.ListObjectsV1Handler, ACTION_LIST, s3a), "LIST"))
+		bucket.Methods("GET").HandlerFunc(track(s3a.iam.Auth(s3a.ListObjectsV1Handler, "ListObjectsV1", s3a), "LIST"))
 
 		// raw buckets
 
