@@ -19,7 +19,6 @@ import (
 	"github.com/pquerna/cachecontrol/cacheobject"
 
 	xhttp "github.com/chrislusf/seaweedfs/weed/s3api/http"
-	"github.com/chrislusf/seaweedfs/weed/s3api/s3_constants"
 	"github.com/chrislusf/seaweedfs/weed/s3api/s3err"
 
 	"github.com/chrislusf/seaweedfs/weed/glog"
@@ -113,32 +112,10 @@ func (s3a *S3ApiServer) PutObjectHandler(w http.ResponseWriter, r *http.Request)
 	}
 	defer dataReader.Close()
 
-	var username, id string
-	if s3a.iam.isEnabled() {
-		if ident, errCode := s3a.iam.authRequest(r, s3_constants.ACTION_ADMIN, s3a); errCode != s3err.ErrNone {
-			s3err.WriteErrorResponse(w, r, errCode)
-			return
-		} else {
-			username = ident.Name
-			id = ident.Credentials[0].AccessKey
-		}
-	}
-
-	var identityId string
-	if identityId = r.Header.Get(xhttp.AmzIdentityId); identityId != "" {
-		if username == "" {
-			username = identityId
-		}
-		if id == "" {
-			id = identityId
-		}
-	} else {
-		if username == "" {
-			username = "anonymous"
-		}
-		if id == "" {
-			id = "anonymous"
-		}
+	username, id, errCode := s3a.getUsernameAndId(r)
+	if errCode != s3err.ErrNone {
+		s3err.WriteErrorResponse(w, r, errCode)
+		return
 	}
 
 	ac_policy, err := xml.Marshal(defaultACPolicyTemplate.CreateACPolicyFromTemplate(id, username))
@@ -151,8 +128,8 @@ func (s3a *S3ApiServer) PutObjectHandler(w http.ResponseWriter, r *http.Request)
 			entry.Extended = make(map[string][]byte)
 		}
 
-		if identityId != "" {
-			entry.Extended[xhttp.AmzIdentityId] = []byte(identityId)
+		if id != "" {
+			entry.Extended[xhttp.AmzIdentityId] = []byte(id)
 		}
 		entry.Extended[S3ACL_KEY] = ac_policy
 		glog.V(4).Infof("Created default access control policy. Object %s is owned by %s", bucket+object, username)

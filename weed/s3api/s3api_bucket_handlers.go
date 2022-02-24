@@ -113,32 +113,10 @@ func (s3a *S3ApiServer) PutBucketHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	var username, id string
-	if s3a.iam.isEnabled() {
-		if ident, errCode := s3a.iam.authRequest(r, s3_constants.ACTION_ADMIN, s3a); errCode != s3err.ErrNone {
-			s3err.WriteErrorResponse(w, r, errCode)
-			return
-		} else {
-			username = ident.Name
-			id = ident.Credentials[0].AccessKey
-		}
-	}
-
-	var identityId string
-	if identityId = r.Header.Get(xhttp.AmzIdentityId); identityId != "" {
-		if username == "" {
-			username = identityId
-		}
-		if id == "" {
-			id = identityId
-		}
-	} else {
-		if username == "" {
-			username = "anonymous"
-		}
-		if id == "" {
-			id = "anonymous"
-		}
+	username, id, errCode := s3a.getUsernameAndId(r)
+	if errCode != s3err.ErrNone {
+		s3err.WriteErrorResponse(w, r, errCode)
+		return
 	}
 
 	fn := func(entry *filer_pb.Entry) {
@@ -146,8 +124,8 @@ func (s3a *S3ApiServer) PutBucketHandler(w http.ResponseWriter, r *http.Request)
 			entry.Extended = make(map[string][]byte)
 		}
 
-		if identityId != "" {
-			entry.Extended[xhttp.AmzIdentityId] = []byte(identityId)
+		if id != "" {
+			entry.Extended[xhttp.AmzIdentityId] = []byte(id)
 		}
 
 		ac_policy, err := xml.Marshal(defaultACPolicyTemplate.CreateACPolicyFromTemplate(id, username))

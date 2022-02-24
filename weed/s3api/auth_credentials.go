@@ -18,6 +18,7 @@ import (
 	xhttp "github.com/chrislusf/seaweedfs/weed/s3api/http"
 	"github.com/chrislusf/seaweedfs/weed/s3api/s3_constants"
 	"github.com/chrislusf/seaweedfs/weed/s3api/s3err"
+	"github.com/chrislusf/seaweedfs/weed/util"
 )
 
 type Action string
@@ -49,6 +50,7 @@ type AuthS3API interface {
 	getACL(parentDirectoryPath string, entryName string) (ac_policy AccessControlPolicyMarshal, err error)
 	getTags(parentDirectoryPath string, entryName string) (tags map[string]string, err error)
 	getBucketsPath() string
+	getUsernameAndId(request *http.Request) (username string, id ID, errCode s3err.ErrorCode)
 }
 
 func (s3a *S3ApiServer) getBucketsPath() string {
@@ -265,24 +267,43 @@ func (iam *IdentityAccessManagement) authRequest(r *http.Request, action Action,
 	if len(authType) > 0 {
 		r.Header.Set(xhttp.AmzAuthType, authType)
 	}
-	if s3Err != s3err.ErrNone {
+	if s3Err != s3err.ErrNone || action == s3_constants.ACTION_ADMIN {
 		return identity, s3Err
 	}
 
 	glog.V(3).Infof("user name: %v actions: %v, action: %v", identity.Name, identity.Actions, action)
 
-	// bucket, object := xhttp.GetBucketAndObject(r)
-	// target := util.FullPath(fmt.Sprintf("%s/%s%s", s3api.getBucketsPath(), bucket, object))
-	// dir, name := target.DirAndName()
+	bucket, object := xhttp.GetBucketAndObject(r)
+	target := util.FullPath(fmt.Sprintf("%s/%s%s", s3api.getBucketsPath(), bucket, object))
+	dir, name := target.DirAndName()
 
-	// tags, err := s3api.getTags(dir, name)
-	// if err != nil {
-	// 	glog.Errorf("No tags for %s: %v", r.URL, err)
-	// }
+	ac_policy_object := AccessControlPolicyMarshal{}
+	if object != "/" {
+		var err error
+		ac_policy_object, err = s3api.getACL(dir, name)
+		if err != nil {
+			glog.Errorf("can't get target %s acl: %v", target, err)
+		}
+	}
 
-	// if !identity.authz(action, bucket, object, tags) {
-	// 	return identity, s3err.ErrAccessDenied
-	// }
+	target_bucket := util.FullPath(fmt.Sprintf("%s/%s", s3api.getBucketsPath(), bucket))
+	dir_bucket, name_bucket := target_bucket.DirAndName()
+	ac_policy_bucket, err := s3api.getACL(dir_bucket, name_bucket)
+	if err != nil {
+		glog.Errorf("can't get target %s acl: %v", target, err)
+	}
+
+	// get_username_and_id returns error code only if AuthRequest return it, so there is no need to check it
+	_, id, _ := s3api.getUsernameAndId(r)
+
+	tags, err := s3api.getTags(dir, name)
+	if err != nil {
+		glog.Errorf("No tags for %s: %v", r.URL, err)
+	}
+
+	if !(id.authzAcl(action, ac_policy_object, ac_policy_bucket) || identity.authz(action, bucket, object, tags)) {
+		return identity, s3err.ErrAccessDenied
+	}
 
 	return identity, s3err.ErrNone
 

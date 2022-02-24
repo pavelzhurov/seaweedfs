@@ -75,6 +75,20 @@ func (s3a *S3ApiServer) setACL(parentDirectoryPath string, entryName string, ac_
 			return fmt.Errorf("can't parse AC policy: %v", err)
 		}
 
+		// Check permissions
+		for _, grant := range check_format.AccessControlList.Grant {
+			ok := false
+			for _, possible_permission := range ACL_PERMISSIONS {
+				if grant.Permission == possible_permission {
+					ok = true
+					break
+				}
+			}
+			if !ok {
+				return fmt.Errorf("permission %v is not allowed. allowed permissions are %v", grant.Permission, ACL_PERMISSIONS)
+			}
+		}
+
 		delete(resp.Entry.Extended, S3ACL_KEY)
 
 		if resp.Entry.Extended == nil {

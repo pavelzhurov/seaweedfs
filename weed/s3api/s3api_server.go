@@ -176,7 +176,7 @@ func (s3a *S3ApiServer) registerRouter(router *mux.Router) {
 		bucket.Methods("GET").HandlerFunc(track(s3a.iam.Auth(s3a.GetBucketRequestPaymentHandler, "GetBucketRequestPayment", s3a), "GET")).Queries("requestPayment", "")
 
 		// ListObjectsV2
-		bucket.Methods("GET").HandlerFunc(track(s3a.iam.Auth(s3a.ListObjectsV2Handler, "ListObjectsV2", s3a), "LIST")).Queries("list-type", "2")
+		bucket.Methods("GET").HandlerFunc(track(s3a.iam.Auth(s3a.ListObjectsV2Handler, "ListBucket", s3a), "LIST")).Queries("list-type", "2")
 
 		// buckets with query
 
@@ -194,7 +194,7 @@ func (s3a *S3ApiServer) registerRouter(router *mux.Router) {
 		bucket.Methods("DELETE").HandlerFunc(track(s3a.iam.Auth(s3a.DeleteBucketHandler, "DeleteBucket", s3a), "DELETE"))
 
 		// ListObjectsV1 (Legacy)
-		bucket.Methods("GET").HandlerFunc(track(s3a.iam.Auth(s3a.ListObjectsV1Handler, "ListObjectsV1", s3a), "LIST"))
+		bucket.Methods("GET").HandlerFunc(track(s3a.iam.Auth(s3a.ListObjectsV1Handler, "ListBucket", s3a), "LIST"))
 
 		// raw buckets
 
