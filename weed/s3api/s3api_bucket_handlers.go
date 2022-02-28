@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/chrislusf/seaweedfs/weed/filer"
@@ -128,7 +129,7 @@ func (s3a *S3ApiServer) PutBucketHandler(w http.ResponseWriter, r *http.Request)
 			entry.Extended[xhttp.AmzIdentityId] = []byte(id)
 		}
 
-		ac_policy, err := xml.Marshal(defaultACPolicyTemplate.CreateACPolicyFromTemplate(id, username))
+		ac_policy, err := xml.Marshal(CreateACPolicyFromTemplate(id, username))
 		if err != nil {
 			glog.Errorf("PutBucketHandler create default Access Policy: %v", err)
 		}
@@ -295,20 +296,106 @@ func (s3a *S3ApiServer) PutBucketAclHandler(w http.ResponseWriter, r *http.Reque
 	target := util.FullPath(fmt.Sprintf("%s/%s", s3a.option.BucketsPath, bucket))
 	dir, name := target.DirAndName()
 
-	ac_policy, err := getBodyFromRequest(r)
+	acPolicyRaw, err := getBodyFromRequest(r)
 	if err != nil {
 		glog.V(3).Infof("Error while obtaining xml from request: %v", err)
 		s3err.WriteErrorResponse(w, r, s3err.ErrMalformedXML)
 		return
 	}
 
-	err = s3a.setACL(dir, name, ac_policy)
+	acPolicy, err := UnmarshalAndCheckACL(acPolicyRaw)
+	if err != nil {
+		glog.V(3).Infof("Error while unmarshaling ACL: %v", err)
+		s3err.WriteErrorResponse(w, r, s3err.ErrMalformedACL)
+		return
+	}
+
+	if acPolicy.Owner.ID == "" {
+		username, id, errCode := s3a.getUsernameAndId(r)
+		if errCode != s3err.ErrNone {
+			s3err.WriteErrorResponse(w, r, errCode)
+			return
+		}
+		if acPolicy.Owner.DisplayName != "" && acPolicy.Owner.DisplayName != username {
+			glog.V(3).Infof("Can't find user id by Display Name, because there is no IAM system")
+			s3err.WriteErrorResponse(w, r, s3err.ErrMalformedACL)
+			return
+		}
+		acPolicy.Owner.DisplayName = username
+		acPolicy.Owner.ID = string(id)
+	}
+
+	for header, values := range r.Header {
+		if strings.HasPrefix(header, xhttp.AmzGrantPrefix) {
+			var permission Permission
+			switch header {
+			case xhttp.AmzGrantRead:
+				permission = Permission("READ")
+			case xhttp.AmzGrantReadACP:
+				permission = Permission("READ_ACP")
+			case xhttp.AmzGrantWrite:
+				permission = Permission("WRITE")
+			case xhttp.AmzGrantWriteACP:
+				permission = Permission("WRITE_ACP")
+			case xhttp.AmzGrantFullControl:
+				permission = Permission("FULL_CONTROL")
+			default:
+				s3err.WriteErrorResponse(w, r, s3err.ErrInvalidRequest)
+				return
+			}
+			for _, value := range values {
+				granteeAndType := strings.Split(value, "=")
+				granteeType, grantee := granteeAndType[0], granteeAndType[1]
+				switch granteeType {
+				case "uri":
+					glog.V(3).Infof("Grantee can be specified only via id, because there is no IAM system")
+					s3err.WriteErrorResponse(w, r, s3err.ErrMalformedACL)
+					return
+				case "email":
+					glog.V(3).Infof("Grantee can be specified only via id, because there is no IAM system")
+					s3err.WriteErrorResponse(w, r, s3err.ErrMalformedACL)
+					return
+				case "id":
+					doesGrantExist := false
+					for _, existingGrant := range acPolicy.AccessControlList.Grant {
+						if existingGrant.Grantee.ID == grantee && existingGrant.Permission == Permission("READ") {
+							doesGrantExist = true
+							break
+						}
+					}
+					if !doesGrantExist {
+						acPolicy.AccessControlList.Grant = append(acPolicy.AccessControlList.Grant, GrantUnmarshal{
+							Grantee: GranteeUnmarshal{
+								XMLName: xml.Name{
+									Space: "http://s3.amazonaws.com/doc/2006-03-01/",
+									Local: "AccessControlPolicy",
+								},
+								XsiType: "CannonicalUser",
+								Type:    "CannonicalUser",
+								ID:      grantee,
+							},
+							Permission: permission,
+						})
+					}
+				}
+			}
+		}
+	}
+
+	ac_policy_bytes, err := xml.Marshal(acPolicy.ConvertToMarshal())
+	if err != nil {
+		glog.V(3).Infof("Error while marshalling ACL with grants from headers: %v", err)
+		s3err.WriteErrorResponse(w, r, s3err.ErrMalformedACL)
+		return
+	}
+
+	err = s3a.setACL(dir, name, ac_policy_bytes)
 	if err != nil {
 		glog.V(3).Infof("Error while setting policy: %v", err)
 		s3err.WriteErrorResponse(w, r, s3err.ErrMalformedACL)
 		return
 	}
-	glog.V(4).Infof("Bucket policy created: %s", ac_policy)
+	glog.V(4).Infof("Bucket policy created: %+v", acPolicy)
 	writeSuccessResponseEmpty(w, r)
 }
 

@@ -118,7 +118,7 @@ func (s3a *S3ApiServer) PutObjectHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	ac_policy, err := xml.Marshal(defaultACPolicyTemplate.CreateACPolicyFromTemplate(id, username))
+	ac_policy, err := xml.Marshal(CreateACPolicyFromTemplate(id, username))
 	if err != nil {
 		glog.Errorf("PutObjectHandler create default Access Policy: %v", err)
 	}

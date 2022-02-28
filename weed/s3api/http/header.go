@@ -36,7 +36,13 @@ const (
 	AmzTagCount      = "x-amz-tagging-count"
 
 	// S3 ACL
-	AmzACL = "x-amz-acl"
+	AmzACL              = "X-Amz-Gcl"
+	AmzGrantFullControl = "X-Amz-Grant-Full-Control"
+	AmzGrantRead        = "X-Amz-Grant-Read"
+	AmzGrantReadACP     = "X-Amz-Grant-Read-Acp"
+	AmzGrantWrite       = "X-Amz-Grant-Write"
+	AmzGrantWriteACP    = "X-Amz-Grant-Write-Acp"
+	AmzGrantPrefix      = "X-Amz-Grant-"
 )
 
 // Non-Standard S3 HTTP request constants
