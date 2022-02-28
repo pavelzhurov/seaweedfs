@@ -58,19 +58,32 @@ func (s3a *S3ApiServer) PutObjectAclHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	ac_policy, err := getBodyFromRequest(r)
+	acPolicyRaw, err := getBodyFromRequest(r)
 	if err != nil {
 		glog.V(3).Infof("Error while obtaining xml from request: %v", err)
 		s3err.WriteErrorResponse(w, r, s3err.ErrMalformedXML)
 		return
 	}
 
-	err = s3a.setACL(dir, name, ac_policy)
+	acPolicy, err := UnmarshalAndCheckACL(acPolicyRaw)
+	if err != nil {
+		glog.V(3).Infof("Error while marshalling ACL with grants from headers: %v", err)
+		s3err.WriteErrorResponse(w, r, s3err.ErrMalformedACL)
+		return
+	}
+
+	acPolicyBytes, errCode := s3a.AddOwnerAndPermissionsFromHeaders(acPolicy, r)
+	if errCode != s3err.ErrNone {
+		s3err.WriteErrorResponse(w, r, errCode)
+		return
+	}
+
+	err = s3a.setACL(dir, name, acPolicyBytes)
 	if err != nil {
 		glog.V(3).Infof("Error while setting policy: %v", err)
 		s3err.WriteErrorResponse(w, r, s3err.ErrMalformedACL)
 		return
 	}
-	glog.V(4).Infof("Object policy created: %s", ac_policy)
+	glog.V(4).Infof("Object policy created: %s", acPolicyBytes)
 	writeSuccessResponseEmpty(w, r)
 }

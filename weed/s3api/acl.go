@@ -4,7 +4,9 @@ import (
 	"encoding/xml"
 	"fmt"
 	"net/http"
+	"strings"
 
+	"github.com/chrislusf/seaweedfs/weed/glog"
 	xhttp "github.com/chrislusf/seaweedfs/weed/s3api/http"
 	"github.com/chrislusf/seaweedfs/weed/s3api/s3_constants"
 	"github.com/chrislusf/seaweedfs/weed/s3api/s3err"
@@ -72,8 +74,8 @@ func (acp_unmarshal *AccessControlPolicyUnmarshal) ConvertToMarshal() AccessCont
 	return acp_marshal
 }
 
-func CreateACPolicyFromTemplate(id ID, display_name string) AccessControlPolicyMarshal {
-	new_acl_policy := AccessControlPolicyMarshal{
+func (s3a *S3ApiServer) CreateACPolicyFromTemplate(id ID, display_name string, r *http.Request) (acPolicyRaw []byte, errCode s3err.ErrorCode) {
+	newAclPolicy := AccessControlPolicyMarshal{
 		XMLName: xml.Name{
 			Space: "http://s3.amazonaws.com/doc/2006-03-01/",
 			Local: "AccessControlPolicy",
@@ -97,30 +99,31 @@ func CreateACPolicyFromTemplate(id ID, display_name string) AccessControlPolicyM
 			},
 		},
 	}
-	new_acl_policy.Owner.ID = string(id)
-	new_acl_policy.Owner.DisplayName = display_name
-	new_acl_policy.AccessControlList.Grant[0].Grantee.ID = string(id)
-	new_acl_policy.AccessControlList.Grant[0].Grantee.DisplayName = display_name
-	return new_acl_policy
+	newAclPolicy.Owner.ID = string(id)
+	newAclPolicy.Owner.DisplayName = display_name
+	newAclPolicy.AccessControlList.Grant[0].Grantee.ID = string(id)
+	newAclPolicy.AccessControlList.Grant[0].Grantee.DisplayName = display_name
+
+	return s3a.AddOwnerAndPermissionsFromHeaders(&newAclPolicy, r)
 }
 
-func UnmarshalAndCheckACL(ac_policy_raw []byte) (ac_policy *AccessControlPolicyUnmarshal, err error) {
+func UnmarshalAndCheckACL(acPolicyRaw []byte) (acPolicyMarshal *AccessControlPolicyMarshal, err error) {
 	// Grants can be passed via headers, in that case request body is empty
-	if len(ac_policy_raw) == 0 {
-		return &AccessControlPolicyUnmarshal{}, nil
+	if len(acPolicyRaw) == 0 {
+		return &AccessControlPolicyMarshal{}, nil
 	}
 
-	ac_policy = &AccessControlPolicyUnmarshal{}
-	err = xml.Unmarshal(ac_policy_raw, ac_policy)
+	acPolicyUnmarshal := &AccessControlPolicyUnmarshal{}
+	err = xml.Unmarshal(acPolicyRaw, acPolicyUnmarshal)
 	if err != nil {
 		return nil, fmt.Errorf("can't parse AC policy: %v", err)
 	}
 
 	// Check permissions
-	for _, grant := range ac_policy.AccessControlList.Grant {
+	for _, grant := range acPolicyUnmarshal.AccessControlList.Grant {
 		ok := false
-		for _, possible_permission := range AclPermissions() {
-			if grant.Permission == possible_permission {
+		for _, possiblePermission := range AclPermissions() {
+			if grant.Permission == possiblePermission {
 				ok = true
 				break
 			}
@@ -130,7 +133,9 @@ func UnmarshalAndCheckACL(ac_policy_raw []byte) (ac_policy *AccessControlPolicyU
 		}
 	}
 
-	return ac_policy, nil
+	acPolicy := acPolicyUnmarshal.ConvertToMarshal()
+
+	return &acPolicy, nil
 }
 
 func (s3a *S3ApiServer) getUsernameAndId(request *http.Request) (username string, id ID, errCode s3err.ErrorCode) {
@@ -160,12 +165,94 @@ func (s3a *S3ApiServer) getUsernameAndId(request *http.Request) (username string
 	return username, id, s3err.ErrNone
 }
 
+func (s3a *S3ApiServer) AddOwnerAndPermissionsFromHeaders(acPolicy *AccessControlPolicyMarshal, r *http.Request) (acPolicyRaw []byte, errCode s3err.ErrorCode) {
+	if acPolicy.Owner.ID == "" {
+		username, id, errCode := s3a.getUsernameAndId(r)
+		if errCode != s3err.ErrNone {
+			return nil, errCode
+		}
+		if acPolicy.Owner.DisplayName != "" && acPolicy.Owner.DisplayName != username {
+			glog.V(3).Infof("Can't find user id by Display Name, because there is no IAM system")
+			return nil, s3err.ErrMalformedACL
+		}
+		acPolicy.Owner.DisplayName = username
+		acPolicy.Owner.ID = string(id)
+	}
+
+	for header, values := range r.Header {
+		if strings.HasPrefix(header, xhttp.AmzGrantPrefix) {
+			var permission Permission
+			switch header {
+			case xhttp.AmzGrantRead:
+				permission = Permission("READ")
+			case xhttp.AmzGrantReadACP:
+				permission = Permission("READ_ACP")
+			case xhttp.AmzGrantWrite:
+				permission = Permission("WRITE")
+			case xhttp.AmzGrantWriteACP:
+				permission = Permission("WRITE_ACP")
+			case xhttp.AmzGrantFullControl:
+				permission = Permission("FULL_CONTROL")
+			default:
+				return nil, s3err.ErrInvalidRequest
+			}
+			for _, value := range values {
+				granteeAndType := strings.Split(value, "=")
+				if len(granteeAndType) != 2 {
+					glog.V(3).Infof("Grantee header malformed: %s", value)
+					return nil, s3err.ErrMalformedACL
+				}
+				granteeType, grantee := granteeAndType[0], granteeAndType[1]
+				switch granteeType {
+				case "uri":
+					glog.V(3).Infof("Grantee can be specified only via id, because there is no IAM system")
+					return nil, s3err.ErrMalformedACL
+				case "email":
+					glog.V(3).Infof("Grantee can be specified only via id, because there is no IAM system")
+					return nil, s3err.ErrMalformedACL
+				case "id":
+					doesGrantExist := false
+					for _, existingGrant := range acPolicy.AccessControlList.Grant {
+						if existingGrant.Grantee.ID == grantee &&
+							(existingGrant.Permission == permission || existingGrant.Permission == Permission("FULL_CONTROL")) {
+							doesGrantExist = true
+							break
+						}
+					}
+					if !doesGrantExist {
+						acPolicy.AccessControlList.Grant = append(acPolicy.AccessControlList.Grant, Grant{
+							Grantee: Grantee{
+								XMLNS:  "http://www.w3.org/2001/XMLSchema-instance",
+								XMLXSI: "CanonicalUser",
+								Type:   "CanonicalUser",
+								ID:     grantee,
+							},
+							Permission: permission,
+						})
+					}
+				default:
+					glog.V(3).Infof("Grantee header malformed: %s", value)
+					return nil, s3err.ErrMalformedACL
+				}
+			}
+		}
+	}
+	acPolicyRaw, err := xml.Marshal(acPolicy)
+	if err != nil {
+		glog.Errorf("Can't marshal policy after adding owner and permissions from headers: %v", err)
+		return nil, s3err.ErrMalformedACL
+	}
+
+	return acPolicyRaw, s3err.ErrNone
+}
+
 func AclMapBucket(permission Permission) []Action {
 	switch permission {
 	case "READ":
 		return []Action{"ListBucket", "ListBucketVersions", "ListBucketMultipartUploads", "GetObject", "GetObjectVersion"}
 	case "WRITE":
-		return []Action{"PutObject", "DeleteObjectVersion", "CopyObject", "DeleteObject"}
+		return []Action{"PutObject", "DeleteObjectVersion", "CopyObject", "DeleteObject",
+			"CopyObjectPart", "PutObjectPart", "CompleteMultipartUpload", "NewMultipartUpload", "AbortMultipartUpload"}
 	case "READ_ACP":
 		return []Action{"GetBucketAcl", "GetObjectAcl", "GetObjectVersionAcl"}
 	case "WRITE_ACP":
@@ -173,6 +260,7 @@ func AclMapBucket(permission Permission) []Action {
 	case "FULL_CONTROL":
 		return []Action{"ListBucket", "ListBucketVersions", "ListBucketMultipartUploads", "GetObject", "GetObjectVersion",
 			"PutObject", "DeleteObjectVersion", "CopyObject", "DeleteObject",
+			"CopyObjectPart", "PutObjectPart", "CompleteMultipartUpload", "NewMultipartUpload", "AbortMultipartUpload",
 			"GetBucketAcl", "GetObjectAcl", "GetObjectVersionAcl", "PutBucketAcl", "PutObjectAcl",
 			"PutObjectVersionAcl"}
 	default:
@@ -183,15 +271,13 @@ func AclMapBucket(permission Permission) []Action {
 func AclMapObject(permission Permission) []Action {
 	switch permission {
 	case "READ":
-		return []Action{"GetObject", "GetObjectVersion"}
-	case "WRITE":
-		return []Action{"GetObjectAcl", "GetObjectVersionAcl"}
+		return []Action{"GetObject", "GetObjectVersion", "HeadObject", "ListObjectParts", "ListMultipartUploads"}
 	case "READ_ACP":
 		return []Action{"GetBucketAcl", "GetObjectAcl", "GetObjectVersionAcl"}
 	case "WRITE_ACP":
 		return []Action{"PutObjectAcl", "PutObjectVersionAcl"}
 	case "FULL_CONTROL":
-		return []Action{"GetObject", "GetObjectVersion",
+		return []Action{"GetObject", "GetObjectVersion", "HeadObject", "ListObjectParts", "ListMultipartUploads",
 			"GetObjectAcl", "GetObjectVersionAcl", "PutObjectAcl",
 			"PutObjectVersionAcl"}
 	default:
