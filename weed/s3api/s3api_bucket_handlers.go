@@ -206,9 +206,6 @@ func (s3a *S3ApiServer) checkBucket(r *http.Request, bucket string) s3err.ErrorC
 		return s3err.ErrNoSuchBucket
 	}
 
-	if !s3a.hasAccess(r, entry) {
-		return s3err.ErrAccessDenied
-	}
 	return s3err.ErrNone
 }
 
