@@ -45,9 +45,6 @@ func (s3a *S3ApiServer) checkObject(r *http.Request, parentDirectoryPath string,
 		return s3err.ErrAccessDenied
 	}
 
-	if !s3a.hasAccess(r, entry) {
-		return s3err.ErrAccessDenied
-	}
 	return s3err.ErrNone
 }
 

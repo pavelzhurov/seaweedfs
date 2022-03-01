@@ -12,6 +12,15 @@ import (
 	"github.com/chrislusf/seaweedfs/weed/s3api/s3err"
 )
 
+// Hardcode groups, because there is no IAM system
+const (
+	AllUsersGroup           = "http://acs.amazonaws.com/groups/global/AllUsers"
+	AuthenticatedUsersGroup = "http://acs.amazonaws.com/groups/global/AuthenticatedUsers"
+
+	UserType  = "CanonicalUser"
+	GroupType = "Group"
+)
+
 type ID string
 
 // Generated XML structures are not compatible with some AWS default attributes, so we need to redefine some of them.
@@ -60,6 +69,7 @@ func (acp_unmarshal *AccessControlPolicyUnmarshal) ConvertToMarshal() AccessCont
 				Type:        grant.Grantee.Type,
 				ID:          grant.Grantee.ID,
 				DisplayName: grant.Grantee.DisplayName,
+				URI:         grant.Grantee.URI,
 			},
 			Permission: grant.Permission,
 		})
@@ -81,28 +91,24 @@ func (s3a *S3ApiServer) CreateACPolicyFromTemplate(id ID, display_name string, r
 			Local: "AccessControlPolicy",
 		},
 		Owner: CanonicalUser{
-			ID:          "",
-			DisplayName: "",
+			ID:          string(id),
+			DisplayName: display_name,
 		},
 		AccessControlList: AccessControlList{
 			Grant: []Grant{
 				{
 					Grantee: Grantee{
 						XMLNS:       "http://www.w3.org/2001/XMLSchema-instance",
-						XMLXSI:      "CanonicalUser",
-						Type:        "CanonicalUser",
-						ID:          "",
-						DisplayName: "",
+						XMLXSI:      UserType,
+						Type:        UserType,
+						ID:          string(id),
+						DisplayName: display_name,
 					},
 					Permission: "FULL_CONTROL",
 				},
 			},
 		},
 	}
-	newAclPolicy.Owner.ID = string(id)
-	newAclPolicy.Owner.DisplayName = display_name
-	newAclPolicy.AccessControlList.Grant[0].Grantee.ID = string(id)
-	newAclPolicy.AccessControlList.Grant[0].Grantee.DisplayName = display_name
 
 	return s3a.AddOwnerAndPermissionsFromHeaders(&newAclPolicy, r)
 }
@@ -119,7 +125,7 @@ func UnmarshalAndCheckACL(acPolicyRaw []byte) (acPolicyMarshal *AccessControlPol
 		return nil, fmt.Errorf("can't parse AC policy: %v", err)
 	}
 
-	// Check permissions
+	// Check permissions and grantees
 	for _, grant := range acPolicyUnmarshal.AccessControlList.Grant {
 		ok := false
 		for _, possiblePermission := range AclPermissions() {
@@ -131,7 +137,23 @@ func UnmarshalAndCheckACL(acPolicyRaw []byte) (acPolicyMarshal *AccessControlPol
 		if !ok {
 			return nil, fmt.Errorf("permission %v is not allowed. allowed permissions are %v", grant.Permission, AclPermissions())
 		}
+		if grant.Grantee.ID == "" &&
+			!(grant.Grantee.URI == AllUsersGroup || grant.Grantee.URI == AuthenticatedUsersGroup) {
+			return nil, fmt.Errorf("grantee ID can't be empty, while URI (%v) doesn't represent valid group one of the (%v, %v)",
+				grant.Grantee.URI, AllUsersGroup, AuthenticatedUsersGroup)
+		}
+
+		if !(grant.Grantee.XsiType == UserType || grant.Grantee.XsiType == GroupType) {
+			return nil, fmt.Errorf("invalid grantee type %v, valid grantee types are %v, %v",
+				grant.Grantee.Type, UserType, GroupType)
+		}
+
+		if grant.Grantee.Type == "" {
+			grant.Grantee.Type = grant.Grantee.XsiType
+		}
 	}
+
+	// Check grantees
 
 	acPolicy := acPolicyUnmarshal.ConvertToMarshal()
 
@@ -205,8 +227,31 @@ func (s3a *S3ApiServer) AddOwnerAndPermissionsFromHeaders(acPolicy *AccessContro
 				granteeType, grantee := granteeAndType[0], granteeAndType[1]
 				switch granteeType {
 				case "uri":
-					glog.V(3).Infof("Grantee can be specified only via id, because there is no IAM system")
-					return nil, s3err.ErrMalformedACL
+					if !(grantee == AuthenticatedUsersGroup || grantee == AllUsersGroup) {
+						glog.V(3).Infof("Grantee can be specified only via id, because there is no IAM system")
+						return nil, s3err.ErrMalformedACL
+					}
+					// Since we can specified only AllUsersGroup and AuthenticatedUsersGroup via URI,
+					// the only possible type is GroupType
+					doesGrantExist := false
+					for _, existingGrant := range acPolicy.AccessControlList.Grant {
+						if existingGrant.Grantee.URI == grantee &&
+							(existingGrant.Permission == permission || existingGrant.Permission == Permission("FULL_CONTROL")) {
+							doesGrantExist = true
+							break
+						}
+					}
+					if !doesGrantExist {
+						acPolicy.AccessControlList.Grant = append(acPolicy.AccessControlList.Grant, Grant{
+							Grantee: Grantee{
+								XMLNS:  "http://www.w3.org/2001/XMLSchema-instance",
+								XMLXSI: GroupType,
+								Type:   GroupType,
+								URI:    grantee,
+							},
+							Permission: permission,
+						})
+					}
 				case "email":
 					glog.V(3).Infof("Grantee can be specified only via id, because there is no IAM system")
 					return nil, s3err.ErrMalformedACL
@@ -223,8 +268,8 @@ func (s3a *S3ApiServer) AddOwnerAndPermissionsFromHeaders(acPolicy *AccessContro
 						acPolicy.AccessControlList.Grant = append(acPolicy.AccessControlList.Grant, Grant{
 							Grantee: Grantee{
 								XMLNS:  "http://www.w3.org/2001/XMLSchema-instance",
-								XMLXSI: "CanonicalUser",
-								Type:   "CanonicalUser",
+								XMLXSI: UserType,
+								Type:   UserType,
 								ID:     grantee,
 							},
 							Permission: permission,
@@ -291,8 +336,11 @@ func AclPermissions() []Permission {
 
 func (ac_policy AccessControlPolicyMarshal) findUserRights(id ID) []Permission {
 	var user_rights []Permission
+	stringId := string(id)
 	for _, grant := range ac_policy.AccessControlList.Grant {
-		if grant.Grantee.ID == string(id) {
+		if grant.Grantee.ID == stringId ||
+			(grant.Grantee.URI == AuthenticatedUsersGroup && stringId != "anonymous") ||
+			grant.Grantee.URI == AllUsersGroup {
 			if grant.Permission == Permission("FULL_CONTROL") {
 				return []Permission{"FULL_CONTROL"}
 			} else {
