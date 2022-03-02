@@ -44,13 +44,14 @@ func (s3a *S3ApiServer) NewMultipartUploadHandler(w http.ResponseWriter, r *http
 		return
 	}
 
-	ac_policy, errCode := s3a.CreateACPolicyFromTemplate(id, username, r)
+	ac_policy, errCode := s3a.CreateACPolicyFromTemplate(id, username, r, true)
 	if errCode != s3err.ErrNone {
 		s3err.WriteErrorResponse(w, r, errCode)
 		return
 	}
 
 	createMultipartUploadInput.Metadata[S3ACL_KEY] = aws.String(string(ac_policy))
+	createMultipartUploadInput.Metadata[xhttp.AmzIdentityId] = aws.String(string(id))
 
 	contentType := r.Header.Get("Content-Type")
 	if contentType != "" {

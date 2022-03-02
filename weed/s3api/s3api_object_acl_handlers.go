@@ -48,7 +48,7 @@ func (s3a *S3ApiServer) GetObjectAclHandler(w http.ResponseWriter, r *http.Reque
 func (s3a *S3ApiServer) PutObjectAclHandler(w http.ResponseWriter, r *http.Request) {
 
 	bucket, object := xhttp.GetBucketAndObject(r)
-	glog.V(3).Infof("PutObjectTaggingHandler %s %s", bucket, object)
+	glog.V(3).Infof("PutObjectAclHandler %s %s", bucket, object)
 
 	target := util.FullPath(fmt.Sprintf("%s/%s%s", s3a.option.BucketsPath, bucket, object))
 	dir, name := target.DirAndName()
@@ -72,7 +72,14 @@ func (s3a *S3ApiServer) PutObjectAclHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	acPolicyBytes, errCode := s3a.AddOwnerAndPermissionsFromHeaders(acPolicy, r)
+	id, err := s3a.getOwner(dir, name)
+	if err != nil {
+		glog.V(3).Infof("Error while obtaining object owner: %v", err)
+		s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
+		return
+	}
+
+	acPolicyBytes, errCode := s3a.AddOwnerAndPermissionsFromHeaders(acPolicy, r, true, id)
 	if errCode != s3err.ErrNone {
 		s3err.WriteErrorResponse(w, r, errCode)
 		return

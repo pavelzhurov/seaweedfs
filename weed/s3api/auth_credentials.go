@@ -51,6 +51,7 @@ type AuthS3API interface {
 	getTags(parentDirectoryPath string, entryName string) (tags map[string]string, err error)
 	getBucketsPath() string
 	getUsernameAndId(request *http.Request) (username string, id ID, errCode s3err.ErrorCode)
+	getOwner(parentDirectoryPath string, entryName string) (owner string, err error)
 }
 
 func (s3a *S3ApiServer) getBucketsPath() string {
@@ -277,20 +278,24 @@ func (iam *IdentityAccessManagement) authRequest(r *http.Request, action Action,
 	target := util.FullPath(fmt.Sprintf("%s/%s%s", s3api.getBucketsPath(), bucket, object))
 	dir, name := target.DirAndName()
 
-	ac_policy_object := AccessControlPolicyMarshal{}
+	acPolicyObject := AccessControlPolicyMarshal{}
 	if object != "/" {
 		var err error
-		ac_policy_object, err = s3api.getACL(dir, name)
+		acPolicyObject, err = s3api.getACL(dir, name)
 		if err != nil {
 			glog.Errorf("can't get target %s acl: %v", target, err)
 		}
 	}
 
-	target_bucket := util.FullPath(fmt.Sprintf("%s/%s", s3api.getBucketsPath(), bucket))
-	dir_bucket, name_bucket := target_bucket.DirAndName()
-	ac_policy_bucket, err := s3api.getACL(dir_bucket, name_bucket)
+	targetBucket := util.FullPath(fmt.Sprintf("%s/%s", s3api.getBucketsPath(), bucket))
+	dirBucket, nameBucket := targetBucket.DirAndName()
+	acPolicyBucket, err := s3api.getACL(dirBucket, nameBucket)
 	if err != nil {
 		glog.Errorf("can't get target %s acl: %v", target, err)
+	}
+	bucketOwner, err := s3api.getOwner(dirBucket, nameBucket)
+	if err != nil {
+		glog.Errorf("can't get bucket %s ownwer: %v", target, err)
 	}
 
 	// get_username_and_id returns error code only if AuthRequest return it, so there is no need to check it
@@ -301,7 +306,7 @@ func (iam *IdentityAccessManagement) authRequest(r *http.Request, action Action,
 		glog.Errorf("No tags for %s: %v", r.URL, err)
 	}
 
-	if !(id.authzAcl(action, ac_policy_object, ac_policy_bucket) || identity.authz(action, bucket, object, tags)) {
+	if !(id.authzAcl(action, acPolicyObject, acPolicyBucket, bucketOwner) || identity.authz(action, bucket, object, tags)) {
 		return identity, s3err.ErrAccessDenied
 	}
 

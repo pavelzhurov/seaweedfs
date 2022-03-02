@@ -36,7 +36,7 @@ const (
 	AmzTagCount      = "x-amz-tagging-count"
 
 	// S3 ACL
-	AmzACL              = "X-Amz-Gcl"
+	AmzACL              = "X-Amz-Acl"
 	AmzGrantFullControl = "X-Amz-Grant-Full-Control"
 	AmzGrantRead        = "X-Amz-Grant-Read"
 	AmzGrantReadACP     = "X-Amz-Grant-Read-Acp"

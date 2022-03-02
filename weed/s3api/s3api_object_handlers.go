@@ -115,7 +115,7 @@ func (s3a *S3ApiServer) PutObjectHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	ac_policy, errCode := s3a.CreateACPolicyFromTemplate(id, username, r)
+	ac_policy, errCode := s3a.CreateACPolicyFromTemplate(id, username, r, true)
 	if errCode != s3err.ErrNone {
 		s3err.WriteErrorResponse(w, r, errCode)
 		return

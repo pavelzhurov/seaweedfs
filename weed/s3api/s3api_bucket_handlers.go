@@ -128,7 +128,7 @@ func (s3a *S3ApiServer) PutBucketHandler(w http.ResponseWriter, r *http.Request)
 			entry.Extended[xhttp.AmzIdentityId] = []byte(id)
 		}
 
-		ac_policy, errCode := s3a.CreateACPolicyFromTemplate(id, username, r)
+		ac_policy, errCode := s3a.CreateACPolicyFromTemplate(id, username, r, false)
 		if errCode != s3err.ErrNone {
 			s3err.WriteErrorResponse(w, r, errCode)
 			return
@@ -308,7 +308,14 @@ func (s3a *S3ApiServer) PutBucketAclHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	acPolicyBytes, errCode := s3a.AddOwnerAndPermissionsFromHeaders(acPolicy, r)
+	id, err := s3a.getOwner(dir, name)
+	if err != nil {
+		glog.V(3).Infof("Error while obtaining bucket owner: %v", err)
+		s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
+		return
+	}
+
+	acPolicyBytes, errCode := s3a.AddOwnerAndPermissionsFromHeaders(acPolicy, r, false, id)
 	if errCode != s3err.ErrNone {
 		s3err.WriteErrorResponse(w, r, errCode)
 		return
