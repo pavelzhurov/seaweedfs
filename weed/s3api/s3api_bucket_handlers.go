@@ -113,34 +113,10 @@ func (s3a *S3ApiServer) PutBucketHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-
-	var username, id string
-//  Disable default authorization
-// 	if s3a.iam.isEnabled() {
-// 		if ident, errCode := s3a.iam.authRequest(r, s3_constants.ACTION_ADMIN); errCode != s3err.ErrNone {
-// 			s3err.WriteErrorResponse(w, r, errCode)
-// 			return
-// 		} else {
-// 			username = ident.Name
-// 			id = ident.Credentials[0].AccessKey
-// 		}
-// 	}
-
-	var identityId string
-	if identityId = r.Header.Get(xhttp.AmzIdentityId); identityId != "" {
-		if username == "" {
-			username = identityId
-		}
-		if id == "" {
-			id = identityId
-		}
-	} else {
-		if username == "" {
-			username = "anonymous"
-		}
-		if id == "" {
-			id = "anonymous"
-		}
+	username, id, errCode := s3a.getUsernameAndId(r)
+	if errCode != s3err.ErrNone {
+		s3err.WriteErrorResponse(w, r, errCode)
+		return
 	}
 
 	fn := func(entry *filer_pb.Entry) {
@@ -148,14 +124,16 @@ func (s3a *S3ApiServer) PutBucketHandler(w http.ResponseWriter, r *http.Request)
 			entry.Extended = make(map[string][]byte)
 		}
 
-		if identityId != "" {
-			entry.Extended[xhttp.AmzIdentityId] = []byte(identityId)
+		if id != "" {
+			entry.Extended[xhttp.AmzIdentityId] = []byte(id)
 		}
 
-		ac_policy, err := xml.Marshal(defaultACPolicyTemplate.CreateACPolicyFromTemplate(id, username))
-		if err != nil {
-			glog.Errorf("PutBucketHandler create default Access Policy: %v", err)
+		ac_policy, errCode := s3a.CreateACPolicyFromTemplate(id, username, r, false)
+		if errCode != s3err.ErrNone {
+			s3err.WriteErrorResponse(w, r, errCode)
+			return
 		}
+
 		entry.Extended[S3ACL_KEY] = ac_policy
 		glog.V(4).Infof("Created default access control policy. Bucket %s is owned by %s", bucket, username)
 	}
@@ -228,9 +206,6 @@ func (s3a *S3ApiServer) checkBucket(r *http.Request, bucket string) s3err.ErrorC
 		return s3err.ErrNoSuchBucket
 	}
 
-	if !s3a.hasAccess(r, entry) {
-		return s3err.ErrAccessDenied
-	}
 	return s3err.ErrNone
 }
 
@@ -319,20 +294,40 @@ func (s3a *S3ApiServer) PutBucketAclHandler(w http.ResponseWriter, r *http.Reque
 	target := util.FullPath(fmt.Sprintf("%s/%s", s3a.option.BucketsPath, bucket))
 	dir, name := target.DirAndName()
 
-	ac_policy, err := getBodyFromRequest(r)
+	acPolicyRaw, err := getBodyFromRequest(r)
 	if err != nil {
 		glog.V(3).Infof("Error while obtaining xml from request: %v", err)
 		s3err.WriteErrorResponse(w, r, s3err.ErrMalformedXML)
 		return
 	}
 
-	err = s3a.setACL(dir, name, ac_policy)
+	acPolicy, err := UnmarshalAndCheckACL(acPolicyRaw)
+	if err != nil {
+		glog.V(3).Infof("Error while unmarshaling ACL: %v", err)
+		s3err.WriteErrorResponse(w, r, s3err.ErrMalformedACL)
+		return
+	}
+
+	id, err := s3a.getOwner(dir, name)
+	if err != nil {
+		glog.V(3).Infof("Error while obtaining bucket owner: %v", err)
+		s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
+		return
+	}
+
+	acPolicyBytes, errCode := s3a.AddOwnerAndPermissionsFromHeaders(acPolicy, r, false, id)
+	if errCode != s3err.ErrNone {
+		s3err.WriteErrorResponse(w, r, errCode)
+		return
+	}
+
+	err = s3a.setACL(dir, name, acPolicyBytes)
 	if err != nil {
 		glog.V(3).Infof("Error while setting policy: %v", err)
 		s3err.WriteErrorResponse(w, r, s3err.ErrMalformedACL)
 		return
 	}
-	glog.V(4).Infof("Bucket policy created: %s", ac_policy)
+	glog.V(4).Infof("Bucket policy created: %+v", acPolicy)
 	writeSuccessResponseEmpty(w, r)
 }
 

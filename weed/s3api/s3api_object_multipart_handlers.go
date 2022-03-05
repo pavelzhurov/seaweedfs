@@ -2,14 +2,15 @@ package s3api
 
 import (
 	"fmt"
-	"github.com/chrislusf/seaweedfs/weed/glog"
-	xhttp "github.com/chrislusf/seaweedfs/weed/s3api/http"
-	"github.com/chrislusf/seaweedfs/weed/s3api/s3err"
-	weed_server "github.com/chrislusf/seaweedfs/weed/server"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+
+	"github.com/chrislusf/seaweedfs/weed/glog"
+	xhttp "github.com/chrislusf/seaweedfs/weed/s3api/http"
+	"github.com/chrislusf/seaweedfs/weed/s3api/s3err"
+	weed_server "github.com/chrislusf/seaweedfs/weed/server"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/s3"
@@ -36,6 +37,21 @@ func (s3a *S3ApiServer) NewMultipartUploadHandler(w http.ResponseWriter, r *http
 	for k, v := range metadata {
 		createMultipartUploadInput.Metadata[k] = aws.String(string(v))
 	}
+
+	username, id, errCode := s3a.getUsernameAndId(r)
+	if errCode != s3err.ErrNone {
+		s3err.WriteErrorResponse(w, r, errCode)
+		return
+	}
+
+	ac_policy, errCode := s3a.CreateACPolicyFromTemplate(id, username, r, true)
+	if errCode != s3err.ErrNone {
+		s3err.WriteErrorResponse(w, r, errCode)
+		return
+	}
+
+	createMultipartUploadInput.Metadata[S3ACL_KEY] = aws.String(string(ac_policy))
+	createMultipartUploadInput.Metadata[xhttp.AmzIdentityId] = aws.String(string(id))
 
 	contentType := r.Header.Get("Content-Type")
 	if contentType != "" {

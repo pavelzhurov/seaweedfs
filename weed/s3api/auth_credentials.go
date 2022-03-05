@@ -50,6 +50,8 @@ type AuthS3API interface {
 	getACL(parentDirectoryPath string, entryName string) (ac_policy AccessControlPolicyMarshal, err error)
 	getTags(parentDirectoryPath string, entryName string) (tags map[string]string, err error)
 	getBucketsPath() string
+	getUsernameAndId(request *http.Request) (username string, id ID, errCode s3err.ErrorCode)
+	getOwner(parentDirectoryPath string, entryName string) (owner string, err error)
 }
 
 func (s3a *S3ApiServer) getBucketsPath() string {
@@ -266,7 +268,7 @@ func (iam *IdentityAccessManagement) authRequest(r *http.Request, action Action,
 	if len(authType) > 0 {
 		r.Header.Set(xhttp.AmzAuthType, authType)
 	}
-	if s3Err != s3err.ErrNone {
+	if s3Err != s3err.ErrNone || action == s3_constants.ACTION_ADMIN {
 		return identity, s3Err
 	}
 
@@ -276,12 +278,35 @@ func (iam *IdentityAccessManagement) authRequest(r *http.Request, action Action,
 	target := util.FullPath(fmt.Sprintf("%s/%s%s", s3api.getBucketsPath(), bucket, object))
 	dir, name := target.DirAndName()
 
+	acPolicyObject := AccessControlPolicyMarshal{}
+	if object != "/" {
+		var err error
+		acPolicyObject, err = s3api.getACL(dir, name)
+		if err != nil {
+			glog.Errorf("can't get target %s acl: %v", target, err)
+		}
+	}
+
+	targetBucket := util.FullPath(fmt.Sprintf("%s/%s", s3api.getBucketsPath(), bucket))
+	dirBucket, nameBucket := targetBucket.DirAndName()
+	acPolicyBucket, err := s3api.getACL(dirBucket, nameBucket)
+	if err != nil {
+		glog.Errorf("can't get target %s acl: %v", target, err)
+	}
+	bucketOwner, err := s3api.getOwner(dirBucket, nameBucket)
+	if err != nil {
+		glog.Errorf("can't get bucket %s ownwer: %v", target, err)
+	}
+
+	// get_username_and_id returns error code only if AuthRequest return it, so there is no need to check it
+	_, id, _ := s3api.getUsernameAndId(r)
+
 	tags, err := s3api.getTags(dir, name)
 	if err != nil {
 		glog.Errorf("No tags for %s: %v", r.URL, err)
 	}
 
-	if !identity.authz(action, bucket, object, tags) {
+	if !(id.authzAcl(action, acPolicyObject, acPolicyBucket, bucketOwner) || identity.authz(action, bucket, object, tags)) {
 		return identity, s3err.ErrAccessDenied
 	}
 

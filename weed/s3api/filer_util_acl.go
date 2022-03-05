@@ -26,7 +26,37 @@ func getBodyFromRequest(req *http.Request) ([]byte, error) {
 	return data, nil
 }
 
-func (s3a *S3ApiServer) getACL(parentDirectoryPath string, entryName string) (ac_policy AccessControlPolicyMarshal, err error) {
+func (s3a *S3ApiServer) getOwner(parentDirectoryPath string, entryName string) (owner string, err error) {
+	err = s3a.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
+
+		resp, err := filer_pb.LookupEntry(client, &filer_pb.LookupDirectoryEntryRequest{
+			Directory: parentDirectoryPath,
+			Name:      entryName,
+		})
+		if err != nil {
+			return err
+		}
+
+		if resp.Entry.Extended == nil {
+			return fmt.Errorf("bucket %s has no owner", entryName)
+		}
+
+		if _, ok := resp.Entry.Extended[xhttp.AmzIdentityId]; !ok {
+			return fmt.Errorf("bucket %s has no owner", entryName)
+		}
+
+		owner = string(resp.Entry.Extended[xhttp.AmzIdentityId])
+
+		if owner == "" {
+			return fmt.Errorf("bucket owner is empty")
+		}
+
+		return nil
+	})
+	return
+}
+
+func (s3a *S3ApiServer) getACL(parentDirectoryPath string, entryName string) (acPolicy AccessControlPolicyMarshal, err error) {
 
 	err = s3a.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
 
@@ -46,9 +76,9 @@ func (s3a *S3ApiServer) getACL(parentDirectoryPath string, entryName string) (ac
 			return fmt.Errorf("%s has no AC policy", entryName)
 		}
 
-		ac_policy_unmarshal := &AccessControlPolicyUnmarshal{}
-		xml.Unmarshal(resp.Entry.Extended[S3ACL_KEY], ac_policy_unmarshal)
-		ac_policy = ac_policy_unmarshal.ConvertToMarshal()
+		acPolicyUnmarshal := &AccessControlPolicyUnmarshal{}
+		xml.Unmarshal(resp.Entry.Extended[S3ACL_KEY], acPolicyUnmarshal)
+		acPolicy = acPolicyUnmarshal.ConvertToMarshal()
 		return nil
 	})
 	return
@@ -65,14 +95,6 @@ func (s3a *S3ApiServer) setACL(parentDirectoryPath string, entryName string, ac_
 		if err != nil {
 			glog.V(3).Infof("Can't obtain entry: directory %s, name %s", parentDirectoryPath, entryName)
 			return err
-		}
-
-		// Check policy format
-		check_format := &AccessControlPolicyUnmarshal{}
-		err = xml.Unmarshal(ac_policy, check_format)
-		if err != nil {
-			glog.V(3).Infof("Can't parse AC policy: %s", ac_policy)
-			return fmt.Errorf("can't parse AC policy: %v", err)
 		}
 
 		delete(resp.Entry.Extended, S3ACL_KEY)
@@ -93,32 +115,3 @@ func (s3a *S3ApiServer) setACL(parentDirectoryPath string, entryName string, ac_
 	})
 
 }
-
-// func (s3a *S3ApiServer) rmACL(parentDirectoryPath string, entryName string) (err error) {
-
-// 	return s3a.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
-
-// 		resp, err := filer_pb.LookupEntry(client, &filer_pb.LookupDirectoryEntryRequest{
-// 			Directory: parentDirectoryPath,
-// 			Name:      entryName,
-// 		})
-// 		if err != nil {
-// 			return err
-// 		}
-
-// 		if _, ok := resp.Entry.Extended[S3ACL_KEY]; ok {
-// 			delete(resp.Entry.Extended, S3ACL_KEY)
-// 		} else {
-// 			return nil
-// 		}
-
-// 		return filer_pb.UpdateEntry(client, &filer_pb.UpdateEntryRequest{
-// 			Directory:          parentDirectoryPath,
-// 			Entry:              resp.Entry,
-// 			IsFromOtherCluster: false,
-// 			Signatures:         nil,
-// 		})
-
-// 	})
-
-// }

@@ -1,4 +1,4 @@
-module github.com/pavelzhurov/seaweedfs
+module github.com/chrislusf/seaweedfs
 
 go 1.17
 
