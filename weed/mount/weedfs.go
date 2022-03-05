@@ -65,6 +65,7 @@ type WFS struct {
 	inodeToPath       *InodeToPath
 	fhmap             *FileHandleToInode
 	dhmap             *DirectoryHandleToInode
+	fuseServer        *fuse.Server
 }
 
 func NewSeaweedFileSystem(option *Option) *WFS {
@@ -72,7 +73,7 @@ func NewSeaweedFileSystem(option *Option) *WFS {
 		RawFileSystem: fuse.NewDefaultRawFileSystem(),
 		option:        option,
 		signature:     util.RandomInt32(),
-		inodeToPath:   NewInodeToPath(),
+		inodeToPath:   NewInodeToPath(util.FullPath(option.FilerMountRootPath)),
 		fhmap:         NewFileHandleToInode(),
 		dhmap:         NewDirectoryHandleToInode(),
 	}
@@ -83,12 +84,14 @@ func NewSeaweedFileSystem(option *Option) *WFS {
 		wfs.chunkCache = chunk_cache.NewTieredChunkCache(256, option.getUniqueCacheDir(), option.CacheSizeMB, 1024*1024)
 	}
 
-	wfs.metaCache = meta_cache.NewMetaCache(path.Join(option.getUniqueCacheDir(), "meta"), option.UidGidMapper, func(path util.FullPath) {
-		wfs.inodeToPath.MarkChildrenCached(path)
-	}, func(path util.FullPath) bool {
-		return wfs.inodeToPath.IsChildrenCached(path)
-	}, func(filePath util.FullPath, entry *filer_pb.Entry) {
-	})
+	wfs.metaCache = meta_cache.NewMetaCache(path.Join(option.getUniqueCacheDir(), "meta"), option.UidGidMapper,
+		util.FullPath(option.FilerMountRootPath),
+		func(path util.FullPath) {
+			wfs.inodeToPath.MarkChildrenCached(path)
+		}, func(path util.FullPath) bool {
+			return wfs.inodeToPath.IsChildrenCached(path)
+		}, func(filePath util.FullPath, entry *filer_pb.Entry) {
+		})
 	grace.OnInterrupt(func() {
 		wfs.metaCache.Shutdown()
 		os.RemoveAll(option.getUniqueCacheDir())
@@ -109,8 +112,15 @@ func (wfs *WFS) String() string {
 	return "seaweedfs"
 }
 
+func (wfs *WFS) Init(server *fuse.Server) {
+	wfs.fuseServer = server
+}
+
 func (wfs *WFS) maybeReadEntry(inode uint64) (path util.FullPath, fh *FileHandle, entry *filer_pb.Entry, status fuse.Status) {
-	path = wfs.inodeToPath.GetPath(inode)
+	path, status = wfs.inodeToPath.GetPath(inode)
+	if status != fuse.OK {
+		return
+	}
 	var found bool
 	if fh, found = wfs.fhmap.FindFileHandle(inode); found {
 		return path, fh, fh.entry, fuse.OK

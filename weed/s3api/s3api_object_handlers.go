@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/chrislusf/seaweedfs/weed/util/mem"
+
 	"github.com/chrislusf/seaweedfs/weed/security"
 
 	"github.com/chrislusf/seaweedfs/weed/filer"
@@ -413,7 +415,9 @@ func passThroughResponse(proxyResponse *http.Response, w http.ResponseWriter) (s
 		statusCode = proxyResponse.StatusCode
 	}
 	w.WriteHeader(statusCode)
-	if n, err := io.Copy(w, proxyResponse.Body); err != nil {
+	buf := mem.Allocate(128 * 1024)
+	defer mem.Free(buf)
+	if n, err := io.CopyBuffer(w, proxyResponse.Body, buf); err != nil {
 		glog.V(1).Infof("passthrough response read %d bytes: %v", n, err)
 	}
 	return statusCode

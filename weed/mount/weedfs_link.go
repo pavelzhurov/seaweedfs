@@ -5,14 +5,20 @@ import (
 	"github.com/chrislusf/seaweedfs/weed/filer"
 	"github.com/chrislusf/seaweedfs/weed/glog"
 	"github.com/chrislusf/seaweedfs/weed/pb/filer_pb"
-	"github.com/chrislusf/seaweedfs/weed/util"
 	"github.com/hanwen/go-fuse/v2/fuse"
 	"time"
 )
 
-const (
-	HARD_LINK_MARKER = '\x01'
-)
+/*
+What is an inode?
+If the file is an hardlinked file:
+	use the hardlink id as inode
+Otherwise:
+	use the file path as inode
+
+When creating a link:
+	use the original file inode
+*/
 
 /** Create a hard link to a file */
 func (wfs *WFS) Link(cancel <-chan struct{}, in *fuse.LinkIn, name string, out *fuse.EntryOut) (code fuse.Status) {
@@ -21,8 +27,14 @@ func (wfs *WFS) Link(cancel <-chan struct{}, in *fuse.LinkIn, name string, out *
 		return s
 	}
 
-	newParentPath := wfs.inodeToPath.GetPath(in.NodeId)
-	oldEntryPath := wfs.inodeToPath.GetPath(in.Oldnodeid)
+	newParentPath, code := wfs.inodeToPath.GetPath(in.NodeId)
+	if code != fuse.OK {
+		return
+	}
+	oldEntryPath, code := wfs.inodeToPath.GetPath(in.Oldnodeid)
+	if code != fuse.OK {
+		return
+	}
 	oldParentPath, _ := oldEntryPath.DirAndName()
 
 	oldEntry, status := wfs.maybeLoadEntry(oldEntryPath)
@@ -32,7 +44,7 @@ func (wfs *WFS) Link(cancel <-chan struct{}, in *fuse.LinkIn, name string, out *
 
 	// update old file to hardlink mode
 	if len(oldEntry.HardLinkId) == 0 {
-		oldEntry.HardLinkId = append(util.RandomBytes(16), HARD_LINK_MARKER)
+		oldEntry.HardLinkId = filer.NewHardLinkId()
 		oldEntry.HardLinkCounter = 1
 	}
 	oldEntry.HardLinkCounter++
@@ -85,7 +97,7 @@ func (wfs *WFS) Link(cancel <-chan struct{}, in *fuse.LinkIn, name string, out *
 		return fuse.EIO
 	}
 
-	inode := wfs.inodeToPath.Lookup(newEntryPath, false, true)
+	inode := wfs.inodeToPath.Lookup(newEntryPath, oldEntry.FileMode(), true, oldEntry.Attributes.Inode, true)
 
 	wfs.outputPbEntry(out, inode, request.Entry)
 

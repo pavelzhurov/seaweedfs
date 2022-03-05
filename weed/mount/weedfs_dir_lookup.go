@@ -20,7 +20,10 @@ func (wfs *WFS) Lookup(cancel <-chan struct{}, header *fuse.InHeader, name strin
 		return s
 	}
 
-	dirPath := wfs.inodeToPath.GetPath(header.NodeId)
+	dirPath, code := wfs.inodeToPath.GetPath(header.NodeId)
+	if code != fuse.OK {
+		return
+	}
 
 	fullFilePath := dirPath.Child(name)
 
@@ -50,7 +53,12 @@ func (wfs *WFS) Lookup(cancel <-chan struct{}, header *fuse.InHeader, name strin
 		return fuse.ENOENT
 	}
 
-	inode := wfs.inodeToPath.Lookup(fullFilePath, localEntry.IsDirectory(), true)
+	inode := wfs.inodeToPath.Lookup(fullFilePath, localEntry.Mode, len(localEntry.HardLinkId) > 0, localEntry.Inode, true)
+
+	if fh, found := wfs.fhmap.FindFileHandle(inode); found {
+		glog.V(4).Infof("lookup opened file %s size %d", dirPath.Child(localEntry.Name()), filer.FileSize(fh.entry))
+		localEntry = filer.FromPbEntry(string(dirPath), fh.entry)
+	}
 
 	wfs.outputFilerEntry(out, inode, localEntry)
 

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/chrislusf/seaweedfs/weed/util/mem"
 	"io"
 	"mime"
 	"net/http"
@@ -20,7 +21,6 @@ import (
 	"github.com/chrislusf/seaweedfs/weed/stats"
 	"github.com/chrislusf/seaweedfs/weed/util"
 )
-
 
 // Validates the preconditions. Returns true if GET/HEAD operation should not proceed.
 // Preconditions supported are:
@@ -119,6 +119,11 @@ func (fs *FilerServer) GetOrHeadHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	if r.URL.Query().Has("metadata") {
+		writeJsonQuiet(w, r, http.StatusOK, entry)
+		return
+	}
+
 	etag := filer.ETagEntry(entry)
 	if checkPreconditions(w, r, entry) {
 		return
@@ -185,7 +190,9 @@ func (fs *FilerServer) GetOrHeadHandler(w http.ResponseWriter, r *http.Request) 
 		}
 		width, height, mode, shouldResize := shouldResizeImages(ext, r)
 		if shouldResize {
-			data, err := filer.ReadAll(fs.filer.MasterClient, entry.Chunks)
+			data := mem.Allocate(int(totalSize))
+			defer mem.Free(data)
+			err := filer.ReadAll(data, fs.filer.MasterClient, entry.Chunks)
 			if err != nil {
 				glog.Errorf("failed to read %s: %v", path, err)
 				w.WriteHeader(http.StatusNotModified)

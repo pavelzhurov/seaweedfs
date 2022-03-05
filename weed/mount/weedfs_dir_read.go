@@ -132,17 +132,20 @@ func (wfs *WFS) ReadDirPlus(cancel <-chan struct{}, input *fuse.ReadIn, out *fus
 func (wfs *WFS) doReadDirectory(input *fuse.ReadIn, out *fuse.DirEntryList, isPlusMode bool) fuse.Status {
 
 	dh := wfs.GetDirectoryHandle(DirectoryHandleId(input.Fh))
-	if dh.isFinished {
-		if input.Offset == 0 {
-			dh.isFinished = false
-			dh.lastEntryName = ""
-		} else {
+	if input.Offset == 0 {
+		dh.isFinished = false
+		dh.lastEntryName = ""
+	} else {
+		if dh.isFinished {
 			return fuse.OK
 		}
 	}
 
 	isEarlyTerminated := false
-	dirPath := wfs.inodeToPath.GetPath(input.NodeId)
+	dirPath, code := wfs.inodeToPath.GetPath(input.NodeId)
+	if code != fuse.OK {
+		return code
+	}
 
 	var dirEntry fuse.DirEntry
 	if input.Offset == 0 {
@@ -157,21 +160,25 @@ func (wfs *WFS) doReadDirectory(input *fuse.ReadIn, out *fuse.DirEntryList, isPl
 
 	processEachEntryFn := func(entry *filer.Entry, isLast bool) bool {
 		dirEntry.Name = entry.Name()
-		dirEntry.Mode = toSystemMode(entry.Mode)
+		dirEntry.Mode = toSyscallMode(entry.Mode)
 		if !isPlusMode {
-			inode := wfs.inodeToPath.Lookup(dirPath.Child(dirEntry.Name), entry.IsDirectory(), false)
+			inode := wfs.inodeToPath.Lookup(dirPath.Child(dirEntry.Name), entry.Mode, len(entry.HardLinkId) > 0, entry.Inode, false)
 			dirEntry.Ino = inode
 			if !out.AddDirEntry(dirEntry) {
 				isEarlyTerminated = true
 				return false
 			}
 		} else {
-			inode := wfs.inodeToPath.Lookup(dirPath.Child(dirEntry.Name), entry.IsDirectory(), true)
+			inode := wfs.inodeToPath.Lookup(dirPath.Child(dirEntry.Name), entry.Mode, len(entry.HardLinkId) > 0, entry.Inode, true)
 			dirEntry.Ino = inode
 			entryOut := out.AddDirLookupEntry(dirEntry)
 			if entryOut == nil {
 				isEarlyTerminated = true
 				return false
+			}
+			if fh, found := wfs.fhmap.FindFileHandle(inode); found {
+				glog.V(4).Infof("readdir opened file %s", dirPath.Child(dirEntry.Name))
+				entry = filer.FromPbEntry(string(dirPath), fh.entry)
 			}
 			wfs.outputFilerEntry(entryOut, inode, entry)
 		}

@@ -7,7 +7,6 @@ import (
 	"github.com/chrislusf/seaweedfs/weed/glog"
 	"github.com/chrislusf/seaweedfs/weed/pb/filer_pb"
 	"github.com/hanwen/go-fuse/v2/fuse"
-	"os"
 	"time"
 )
 
@@ -97,7 +96,7 @@ func (wfs *WFS) Fsync(cancel <-chan struct{}, in *fuse.FsyncIn) (code fuse.Statu
 func (wfs *WFS) doFlush(fh *FileHandle, uid, gid uint32) fuse.Status {
 	// flush works at fh level
 	fileFullPath := fh.FullPath()
-	dir, _ := fileFullPath.DirAndName()
+	dir, name := fileFullPath.DirAndName()
 	// send the data to the OS
 	glog.V(4).Infof("doFlush %s fh %d", fileFullPath, fh.handle)
 
@@ -116,6 +115,7 @@ func (wfs *WFS) doFlush(fh *FileHandle, uid, gid uint32) fuse.Status {
 		if entry == nil {
 			return nil
 		}
+		entry.Name = name // this flush may be just after a rename operation
 
 		if entry.Attributes != nil {
 			entry.Attributes.Mime = fh.contentType
@@ -129,7 +129,6 @@ func (wfs *WFS) doFlush(fh *FileHandle, uid, gid uint32) fuse.Status {
 				entry.Attributes.Crtime = time.Now().Unix()
 			}
 			entry.Attributes.Mtime = time.Now().Unix()
-			entry.Attributes.FileMode = uint32(os.FileMode(entry.Attributes.FileMode) &^ wfs.option.Umask)
 			entry.Attributes.Collection, entry.Attributes.Replication = fh.dirtyPages.GetStorageOptions()
 		}
 
