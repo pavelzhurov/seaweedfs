@@ -134,7 +134,6 @@ func UnmarshalAndCheckACL(acPolicyRaw []byte) (acPolicyMarshal *AccessControlPol
 		return nil, fmt.Errorf("can't parse AC policy: %v", err)
 	}
 
-	// Check permissions and grantees
 	for _, grant := range acPolicyUnmarshal.AccessControlList.Grant {
 		ok := false
 		for _, possiblePermission := range AclPermissions() {
@@ -161,8 +160,6 @@ func UnmarshalAndCheckACL(acPolicyRaw []byte) (acPolicyMarshal *AccessControlPol
 			grant.Grantee.Type = grant.Grantee.XsiType
 		}
 	}
-
-	// Check grantees
 
 	acPolicy := acPolicyUnmarshal.ConvertToMarshal()
 
