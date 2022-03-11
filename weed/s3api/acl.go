@@ -180,15 +180,17 @@ func (s3a *S3ApiServer) getUsernameAndId(request *http.Request) (username string
 			username = identityId
 		}
 		id = ID(identityId)
-	} else {
-		if username == "" {
-			username = "anonymous"
-			id = ID("anonymous")
-		}
-		if id == "" {
-			id = ID(username)
-		}
 	}
+
+	if username == "" {
+		username = "anonymous"
+		id = ID("anonymous")
+	}
+
+	if id == "" {
+		id = ID(username)
+	}
+
 	return username, id, s3err.ErrNone
 }
 

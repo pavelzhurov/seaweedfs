@@ -38,22 +38,50 @@ func (s3a *S3ApiServer) getOwner(parentDirectoryPath string, entryName string) (
 		}
 
 		if resp.Entry.Extended == nil {
-			return fmt.Errorf("bucket %s has no owner", entryName)
+			return fmt.Errorf("%s has no owner", entryName)
 		}
 
 		if _, ok := resp.Entry.Extended[xhttp.AmzIdentityId]; !ok {
-			return fmt.Errorf("bucket %s has no owner", entryName)
+			return fmt.Errorf("%s has no owner", entryName)
 		}
 
 		owner = string(resp.Entry.Extended[xhttp.AmzIdentityId])
 
 		if owner == "" {
-			return fmt.Errorf("bucket owner is empty")
+			return fmt.Errorf("owner is empty")
 		}
 
 		return nil
 	})
 	return
+}
+
+func (s3a *S3ApiServer) setOwner(parentDirectoryPath, entryName string, owner ID) (err error) {
+	return s3a.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
+
+		resp, err := filer_pb.LookupEntry(client, &filer_pb.LookupDirectoryEntryRequest{
+			Directory: parentDirectoryPath,
+			Name:      entryName,
+		})
+		if err != nil {
+			glog.V(3).Infof("Can't obtain entry: directory %s, name %s", parentDirectoryPath, entryName)
+			return err
+		}
+
+		if resp.Entry.Extended == nil {
+			resp.Entry.Extended = make(map[string][]byte)
+		}
+
+		resp.Entry.Extended[xhttp.AmzIdentityId] = []byte(owner)
+
+		return filer_pb.UpdateEntry(client, &filer_pb.UpdateEntryRequest{
+			Directory:          parentDirectoryPath,
+			Entry:              resp.Entry,
+			IsFromOtherCluster: false,
+			Signatures:         nil,
+		})
+
+	})
 }
 
 func (s3a *S3ApiServer) getACL(parentDirectoryPath string, entryName string) (acPolicy AccessControlPolicyMarshal, err error) {

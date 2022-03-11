@@ -124,9 +124,7 @@ func (s3a *S3ApiServer) PutBucketHandler(w http.ResponseWriter, r *http.Request)
 			entry.Extended = make(map[string][]byte)
 		}
 
-		if id != "" {
-			entry.Extended[xhttp.AmzIdentityId] = []byte(id)
-		}
+		entry.Extended[xhttp.AmzIdentityId] = []byte(id)
 
 		ac_policy, errCode := s3a.CreateACPolicyFromTemplate(id, username, r, false)
 		if errCode != s3err.ErrNone {
