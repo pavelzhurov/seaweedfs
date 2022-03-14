@@ -166,7 +166,7 @@ func UnmarshalAndCheckACL(acPolicyRaw []byte) (acPolicyMarshal *AccessControlPol
 	return &acPolicy, nil
 }
 
-func (s3a *S3ApiServer) getUsernameAndId(request *http.Request) (username string, id ID, errCode s3err.ErrorCode) {
+func (s3a *S3ApiServer) GetUsernameAndId(request *http.Request) (username string, id ID, errCode s3err.ErrorCode) {
 	if s3a.iam.isEnabled() {
 		if ident, errCode := s3a.iam.authRequest(request, s3_constants.ACTION_ADMIN, s3a); errCode != s3err.ErrNone {
 			return "", "", errCode
@@ -250,7 +250,7 @@ func (acPolicy *AccessControlPolicyMarshal) addUserGrant(grantee string, permiss
 
 func (s3a *S3ApiServer) AddOwnerAndPermissionsFromHeaders(acPolicy *AccessControlPolicyMarshal, r *http.Request, isObject bool, owner string) (acPolicyRaw []byte, errCode s3err.ErrorCode) {
 	if acPolicy.Owner.ID == "" {
-		username, id, errCode := s3a.getUsernameAndId(r)
+		username, id, errCode := s3a.GetUsernameAndId(r)
 		if errCode != s3err.ErrNone {
 			return nil, errCode
 		}

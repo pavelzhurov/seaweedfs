@@ -27,7 +27,7 @@ func (s3a *S3ApiServer) GetObjectAclHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	ac_policy, err := s3a.getACL(dir, name)
+	ac_policy, err := s3a.GetACL(dir, name)
 	if err != nil {
 		if err == filer_pb.ErrNotFound {
 			glog.Errorf("Can't find ACL for object %s: %v", r.URL, err)
@@ -72,7 +72,7 @@ func (s3a *S3ApiServer) PutObjectAclHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	id, err := s3a.getOwner(dir, name)
+	id, err := s3a.GetOwner(dir, name)
 	if err != nil {
 		glog.V(3).Infof("Error while obtaining object owner: %v", err)
 		s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)

@@ -11,7 +11,7 @@ const (
 	S3TAG_PREFIX = xhttp.AmzObjectTagging + "-"
 )
 
-func (s3a *S3ApiServer) getTags(parentDirectoryPath string, entryName string) (tags map[string]string, err error) {
+func (s3a *S3ApiServer) GetTags(parentDirectoryPath string, entryName string) (tags map[string]string, err error) {
 
 	err = s3a.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
 

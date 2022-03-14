@@ -3,9 +3,10 @@ package s3api
 import (
 	"encoding/xml"
 	"fmt"
-	xhttp "github.com/chrislusf/seaweedfs/weed/s3api/http"
 	"io"
 	"net/http"
+
+	xhttp "github.com/chrislusf/seaweedfs/weed/s3api/http"
 
 	"github.com/chrislusf/seaweedfs/weed/glog"
 	"github.com/chrislusf/seaweedfs/weed/pb/filer_pb"
@@ -23,7 +24,7 @@ func (s3a *S3ApiServer) GetObjectTaggingHandler(w http.ResponseWriter, r *http.R
 	target := util.FullPath(fmt.Sprintf("%s/%s%s", s3a.option.BucketsPath, bucket, object))
 	dir, name := target.DirAndName()
 
-	tags, err := s3a.getTags(dir, name)
+	tags, err := s3a.GetTags(dir, name)
 	if err != nil {
 		if err == filer_pb.ErrNotFound {
 			glog.Errorf("GetObjectTaggingHandler %s: %v", r.URL, err)

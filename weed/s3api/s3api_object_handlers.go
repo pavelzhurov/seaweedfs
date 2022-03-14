@@ -109,7 +109,7 @@ func (s3a *S3ApiServer) PutObjectHandler(w http.ResponseWriter, r *http.Request)
 	}
 	defer dataReader.Close()
 
-	username, id, errCode := s3a.getUsernameAndId(r)
+	username, id, errCode := s3a.GetUsernameAndId(r)
 	if errCode != s3err.ErrNone {
 		s3err.WriteErrorResponse(w, r, errCode)
 		return

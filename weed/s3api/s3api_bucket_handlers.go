@@ -113,7 +113,7 @@ func (s3a *S3ApiServer) PutBucketHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	username, id, errCode := s3a.getUsernameAndId(r)
+	username, id, errCode := s3a.GetUsernameAndId(r)
 	if errCode != s3err.ErrNone {
 		s3err.WriteErrorResponse(w, r, errCode)
 		return
@@ -240,7 +240,7 @@ func (s3a *S3ApiServer) GetBucketAclHandler(w http.ResponseWriter, r *http.Reque
 	target := util.FullPath(fmt.Sprintf("%s/%s", s3a.option.BucketsPath, bucket))
 	dir, name := target.DirAndName()
 
-	response, err := s3a.getACL(dir, name)
+	response, err := s3a.GetACL(dir, name)
 	glog.V(4).Infof("Bucket policy: %+v", response)
 	if err != nil {
 		// For backward compabitility use old bucket ACL implementation, if bucket doesn't have AccessPolicy
@@ -306,7 +306,7 @@ func (s3a *S3ApiServer) PutBucketAclHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	id, err := s3a.getOwner(dir, name)
+	id, err := s3a.GetOwner(dir, name)
 	if err != nil {
 		glog.V(3).Infof("Error while obtaining bucket owner: %v", err)
 		s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)

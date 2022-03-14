@@ -26,7 +26,7 @@ func getBodyFromRequest(req *http.Request) ([]byte, error) {
 	return data, nil
 }
 
-func (s3a *S3ApiServer) getOwner(parentDirectoryPath string, entryName string) (owner string, err error) {
+func (s3a *S3ApiServer) GetOwner(parentDirectoryPath string, entryName string) (owner string, err error) {
 	err = s3a.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
 
 		resp, err := filer_pb.LookupEntry(client, &filer_pb.LookupDirectoryEntryRequest{
@@ -84,7 +84,7 @@ func (s3a *S3ApiServer) setOwner(parentDirectoryPath, entryName string, owner ID
 	})
 }
 
-func (s3a *S3ApiServer) getACL(parentDirectoryPath string, entryName string) (acPolicy AccessControlPolicyMarshal, err error) {
+func (s3a *S3ApiServer) GetACL(parentDirectoryPath string, entryName string) (acPolicy AccessControlPolicyMarshal, err error) {
 
 	err = s3a.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
 
