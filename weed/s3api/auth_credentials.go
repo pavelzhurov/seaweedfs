@@ -47,14 +47,14 @@ type Credential struct {
 }
 
 type AuthS3API interface {
-	getACL(parentDirectoryPath string, entryName string) (ac_policy AccessControlPolicyMarshal, err error)
-	getTags(parentDirectoryPath string, entryName string) (tags map[string]string, err error)
-	getBucketsPath() string
-	getUsernameAndId(request *http.Request) (username string, id ID, errCode s3err.ErrorCode)
-	getOwner(parentDirectoryPath string, entryName string) (owner string, err error)
+	GetACL(parentDirectoryPath string, entryName string) (ac_policy AccessControlPolicyMarshal, err error)
+	GetTags(parentDirectoryPath string, entryName string) (tags map[string]string, err error)
+	GetBucketsPath() string
+	GetUsernameAndId(request *http.Request) (username string, id ID, errCode s3err.ErrorCode)
+	GetOwner(parentDirectoryPath string, entryName string) (owner string, err error)
 }
 
-func (s3a *S3ApiServer) getBucketsPath() string {
+func (s3a *S3ApiServer) GetBucketsPath() string {
 	return s3a.option.BucketsPath
 }
 
@@ -275,33 +275,33 @@ func (iam *IdentityAccessManagement) authRequest(r *http.Request, action Action,
 	glog.V(3).Infof("user name: %v actions: %v, action: %v", identity.Name, identity.Actions, action)
 
 	bucket, object := xhttp.GetBucketAndObject(r)
-	target := util.FullPath(fmt.Sprintf("%s/%s%s", s3api.getBucketsPath(), bucket, object))
+	target := util.FullPath(fmt.Sprintf("%s/%s%s", s3api.GetBucketsPath(), bucket, object))
 	dir, name := target.DirAndName()
 
 	acPolicyObject := AccessControlPolicyMarshal{}
 	if object != "/" {
 		var err error
-		acPolicyObject, err = s3api.getACL(dir, name)
+		acPolicyObject, err = s3api.GetACL(dir, name)
 		if err != nil {
 			glog.Errorf("can't get target %s acl: %v", target, err)
 		}
 	}
 
-	targetBucket := util.FullPath(fmt.Sprintf("%s/%s", s3api.getBucketsPath(), bucket))
+	targetBucket := util.FullPath(fmt.Sprintf("%s/%s", s3api.GetBucketsPath(), bucket))
 	dirBucket, nameBucket := targetBucket.DirAndName()
-	acPolicyBucket, err := s3api.getACL(dirBucket, nameBucket)
+	acPolicyBucket, err := s3api.GetACL(dirBucket, nameBucket)
 	if err != nil {
 		glog.Errorf("can't get target %s acl: %v", target, err)
 	}
-	bucketOwner, err := s3api.getOwner(dirBucket, nameBucket)
+	bucketOwner, err := s3api.GetOwner(dirBucket, nameBucket)
 	if err != nil {
 		glog.Errorf("can't get bucket %s ownwer: %v", target, err)
 	}
 
 	// get_username_and_id returns error code only if AuthRequest return it, so there is no need to check it
-	_, id, _ := s3api.getUsernameAndId(r)
+	_, id, _ := s3api.GetUsernameAndId(r)
 
-	tags, err := s3api.getTags(dir, name)
+	tags, err := s3api.GetTags(dir, name)
 	if err != nil {
 		glog.Errorf("No tags for %s: %v", r.URL, err)
 	}

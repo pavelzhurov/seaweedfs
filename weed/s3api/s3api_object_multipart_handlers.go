@@ -38,7 +38,7 @@ func (s3a *S3ApiServer) NewMultipartUploadHandler(w http.ResponseWriter, r *http
 		createMultipartUploadInput.Metadata[k] = aws.String(string(v))
 	}
 
-	username, id, errCode := s3a.getUsernameAndId(r)
+	username, id, errCode := s3a.GetUsernameAndId(r)
 	if errCode != s3err.ErrNone {
 		s3err.WriteErrorResponse(w, r, errCode)
 		return

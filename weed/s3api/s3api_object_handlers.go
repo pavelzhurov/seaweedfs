@@ -111,7 +111,7 @@ func (s3a *S3ApiServer) PutObjectHandler(w http.ResponseWriter, r *http.Request)
 	}
 	defer dataReader.Close()
 
-	username, id, errCode := s3a.getUsernameAndId(r)
+	username, id, errCode := s3a.GetUsernameAndId(r)
 	if errCode != s3err.ErrNone {
 		s3err.WriteErrorResponse(w, r, errCode)
 		return
@@ -128,9 +128,8 @@ func (s3a *S3ApiServer) PutObjectHandler(w http.ResponseWriter, r *http.Request)
 			entry.Extended = make(map[string][]byte)
 		}
 
-		if id != "" {
-			entry.Extended[xhttp.AmzIdentityId] = []byte(id)
-		}
+		entry.Extended[xhttp.AmzIdentityId] = []byte(id)
+
 		entry.Extended[S3ACL_KEY] = ac_policy
 		glog.V(4).Infof("Created default access control policy. Object %s is owned by %s", bucket+object, username)
 	}
@@ -160,7 +159,13 @@ func (s3a *S3ApiServer) PutObjectHandler(w http.ResponseWriter, r *http.Request)
 		dir, name := target.DirAndName()
 		err = s3a.setACL(dir, name, ac_policy)
 		if err != nil {
-			glog.Errorf("PutObjectHandler create default Access Policy: %v", err)
+			glog.Errorf("Error while creating default Access Policy: %v", err)
+			s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
+			return
+		}
+		err = s3a.setOwner(dir, name, id)
+		if err != nil {
+			glog.Errorf("Error while setting owner: %v", err)
 			s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
 			return
 		}
