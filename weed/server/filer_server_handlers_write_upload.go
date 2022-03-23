@@ -31,8 +31,8 @@ var bufPool = sync.Pool{
 
 func (fs *FilerServer) uploadReaderToChunks(w http.ResponseWriter, r *http.Request, reader io.Reader, chunkSize int32, fileName, contentType string, contentLength int64, so *operation.StorageOption) (fileChunks []*filer_pb.FileChunk, md5Hash hash.Hash, chunkOffset int64, uploadErr error, smallContent []byte) {
 	query := r.URL.Query()
-	isAppend := query.Get("op") == "append"
 
+	isAppend := isAppend(r)
 	if query.Has("offset") {
 		offset := query.Get("offset")
 		offsetInt, err := strconv.ParseInt(offset, 10, 64)
@@ -79,6 +79,7 @@ func (fs *FilerServer) uploadReaderToChunks(w http.ResponseWriter, r *http.Reque
 			bufPool.Put(bytesBuffer)
 			atomic.AddInt64(&bytesBufferCounter, -1)
 			bytesBufferLimitCond.Signal()
+			uploadErr = err
 			break
 		}
 		if chunkOffset == 0 && !isAppend {
@@ -126,6 +127,7 @@ func (fs *FilerServer) uploadReaderToChunks(w http.ResponseWriter, r *http.Reque
 	wg.Wait()
 
 	if uploadErr != nil {
+		fs.filer.DeleteChunks(fileChunks)
 		return nil, md5Hash, 0, uploadErr, nil
 	}
 

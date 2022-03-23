@@ -8,12 +8,16 @@ import (
 	"github.com/chrislusf/seaweedfs/weed/pb/filer_pb"
 	"github.com/hanwen/go-fuse/v2/fuse"
 	"os"
+	"syscall"
 	"time"
 )
 
 /** Create a symbolic link */
 func (wfs *WFS) Symlink(cancel <-chan struct{}, header *fuse.InHeader, target string, name string, out *fuse.EntryOut) (code fuse.Status) {
 
+	if wfs.IsOverQuota {
+		return fuse.Status(syscall.ENOSPC)
+	}
 	if s := checkName(name); s != fuse.OK {
 		return s
 	}
@@ -59,7 +63,7 @@ func (wfs *WFS) Symlink(cancel <-chan struct{}, header *fuse.InHeader, target st
 		return fuse.EIO
 	}
 
-	inode := wfs.inodeToPath.Lookup(entryFullPath, os.ModeSymlink, false, 0, true)
+	inode := wfs.inodeToPath.Lookup(entryFullPath, request.Entry.Attributes.Crtime, false, false, 0, true)
 
 	wfs.outputPbEntry(out, inode, request.Entry)
 

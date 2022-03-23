@@ -21,6 +21,10 @@ import (
  * */
 func (wfs *WFS) Mkdir(cancel <-chan struct{}, in *fuse.MkdirIn, name string, out *fuse.EntryOut) (code fuse.Status) {
 
+	if wfs.IsOverQuota {
+		return fuse.Status(syscall.ENOSPC)
+	}
+
 	if s := checkName(name); s != fuse.OK {
 		return s
 	}
@@ -74,7 +78,7 @@ func (wfs *WFS) Mkdir(cancel <-chan struct{}, in *fuse.MkdirIn, name string, out
 		return fuse.EIO
 	}
 
-	inode := wfs.inodeToPath.Lookup(entryFullPath, os.ModeDir, false, 0, true)
+	inode := wfs.inodeToPath.Lookup(entryFullPath, newEntry.Attributes.Crtime, true, false, 0, true)
 
 	wfs.outputPbEntry(out, inode, newEntry)
 

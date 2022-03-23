@@ -3,6 +3,7 @@ package mount
 import (
 	"github.com/hanwen/go-fuse/v2/fuse"
 	"net/http"
+	"syscall"
 )
 
 /**
@@ -33,10 +34,16 @@ import (
  */
 func (wfs *WFS) Write(cancel <-chan struct{}, in *fuse.WriteIn, data []byte) (written uint32, code fuse.Status) {
 
+	if wfs.IsOverQuota {
+		return 0, fuse.Status(syscall.ENOSPC)
+	}
+
 	fh := wfs.GetHandle(FileHandleId(in.Fh))
 	if fh == nil {
 		return 0, fuse.ENOENT
 	}
+
+	fh.dirtyPages.writerPattern.MonitorWriteAt(int64(in.Offset), int(in.Size))
 
 	fh.Lock()
 	defer fh.Unlock()
@@ -51,7 +58,7 @@ func (wfs *WFS) Write(cancel <-chan struct{}, in *fuse.WriteIn, data []byte) (wr
 	entry.Attributes.FileSize = uint64(max(offset+int64(len(data)), int64(entry.Attributes.FileSize)))
 	// glog.V(4).Infof("%v write [%d,%d) %d", fh.f.fullpath(), req.Offset, req.Offset+int64(len(req.Data)), len(req.Data))
 
-	fh.dirtyPages.AddPage(offset, data)
+	fh.dirtyPages.AddPage(offset, data, fh.dirtyPages.writerPattern.IsStreamingMode())
 
 	written = uint32(len(data))
 

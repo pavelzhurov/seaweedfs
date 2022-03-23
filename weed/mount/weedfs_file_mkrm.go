@@ -7,6 +7,7 @@ import (
 	"github.com/chrislusf/seaweedfs/weed/glog"
 	"github.com/chrislusf/seaweedfs/weed/pb/filer_pb"
 	"github.com/hanwen/go-fuse/v2/fuse"
+	"syscall"
 	"time"
 )
 
@@ -35,6 +36,10 @@ func (wfs *WFS) Create(cancel <-chan struct{}, in *fuse.CreateIn, name string, o
  */
 func (wfs *WFS) Mknod(cancel <-chan struct{}, in *fuse.MknodIn, name string, out *fuse.EntryOut) (code fuse.Status) {
 
+	if wfs.IsOverQuota {
+		return fuse.Status(syscall.ENOSPC)
+	}
+
 	if s := checkName(name); s != fuse.OK {
 		return s
 	}
@@ -46,14 +51,15 @@ func (wfs *WFS) Mknod(cancel <-chan struct{}, in *fuse.MknodIn, name string, out
 
 	entryFullPath := dirFullPath.Child(name)
 	fileMode := toOsFileMode(in.Mode)
-	inode := wfs.inodeToPath.AllocateInode(entryFullPath, fileMode)
+	now := time.Now().Unix()
+	inode := wfs.inodeToPath.AllocateInode(entryFullPath, now)
 
 	newEntry := &filer_pb.Entry{
 		Name:        name,
 		IsDirectory: false,
 		Attributes: &filer_pb.FuseAttributes{
-			Mtime:       time.Now().Unix(),
-			Crtime:      time.Now().Unix(),
+			Mtime:       now,
+			Crtime:      now,
 			FileMode:    uint32(fileMode),
 			Uid:         in.Uid,
 			Gid:         in.Gid,
@@ -96,7 +102,7 @@ func (wfs *WFS) Mknod(cancel <-chan struct{}, in *fuse.MknodIn, name string, out
 	}
 
 	// this is to increase nlookup counter
-	inode = wfs.inodeToPath.Lookup(entryFullPath, fileMode, false, inode, true)
+	inode = wfs.inodeToPath.Lookup(entryFullPath, newEntry.Attributes.Crtime, false, false, inode, true)
 
 	wfs.outputPbEntry(out, inode, newEntry)
 
