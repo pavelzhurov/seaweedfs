@@ -210,7 +210,7 @@ func (fs *FilerServer) detectStorageOption(requestURI, qCollection, qReplication
 
 	return &operation.StorageOption{
 		Replication:       util.Nvl(qReplication, rule.Replication, bucketDefaultReplication, fs.option.DefaultReplication),
-		Collection:        util.Nvl(qCollection, rule.Collection, bucketDefaultCollection, fs.option.Collection),
+		Collection:        util.Nvl(qCollection, rule.Collection, fs.option.Collection, bucketDefaultCollection),
 		DataCenter:        util.Nvl(dataCenter, rule.DataCenter, fs.option.DataCenter),
 		Rack:              util.Nvl(rack, rule.Rack, fs.option.Rack),
 		DataNode:          util.Nvl(dataNode, rule.DataNode, fs.option.DataNode),
