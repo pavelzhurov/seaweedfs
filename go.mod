@@ -51,7 +51,7 @@ require (
 	github.com/google/uuid v1.3.0
 	github.com/google/wire v0.5.0 // indirect
 	github.com/googleapis/gax-go/v2 v2.1.1 // indirect
-	github.com/gorilla/mux v1.7.4
+	github.com/gorilla/mux v1.8.0
 	github.com/grpc-ecosystem/go-grpc-middleware v1.1.0
 	github.com/hailocab/go-hostpool v0.0.0-20160125115350-e80d13ce29ed // indirect
 	github.com/hashicorp/errwrap v1.0.0 // indirect
@@ -87,10 +87,10 @@ require (
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/posener/complete v1.2.3
 	github.com/pquerna/cachecontrol v0.1.0
-	github.com/prometheus/client_golang v1.11.0
+	github.com/prometheus/client_golang v1.12.1
 	github.com/prometheus/client_model v0.2.0 // indirect
-	github.com/prometheus/common v0.26.0 // indirect
-	github.com/prometheus/procfs v0.6.0 // indirect
+	github.com/prometheus/common v0.32.1 // indirect
+	github.com/prometheus/procfs v0.7.3 // indirect
 	github.com/rcrowley/go-metrics v0.0.0-20190826022208-cac0b30c2563 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20200410134404-eec4a21b6bb0 // indirect
 	github.com/seaweedfs/goexif v2.0.0+incompatible
@@ -156,7 +156,9 @@ require (
 
 require (
 	github.com/fluent/fluent-logger-golang v1.8.0
+	github.com/gobwas/glob v0.2.3
 	github.com/hanwen/go-fuse/v2 v2.1.0
+	github.com/pinterest/knox v0.0.0-20211207222708-13c0858cdca9
 )
 
 require (
