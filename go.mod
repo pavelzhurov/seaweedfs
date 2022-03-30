@@ -51,7 +51,7 @@ require (
 	github.com/google/uuid v1.3.0
 	github.com/google/wire v0.5.0 // indirect
 	github.com/googleapis/gax-go/v2 v2.1.1 // indirect
-	github.com/gorilla/mux v1.7.4
+	github.com/gorilla/mux v1.8.0
 	github.com/grpc-ecosystem/go-grpc-middleware v1.1.0
 	github.com/hailocab/go-hostpool v0.0.0-20160125115350-e80d13ce29ed // indirect
 	github.com/hashicorp/errwrap v1.0.0 // indirect
@@ -66,8 +66,7 @@ require (
 	github.com/karlseguin/ccache/v2 v2.0.8
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51 // indirect
 	github.com/klauspost/compress v1.13.6 // indirect
-	github.com/klauspost/cpuid v1.2.1 // indirect
-	github.com/klauspost/reedsolomon v1.9.2
+	github.com/klauspost/reedsolomon v1.9.16
 	github.com/kurin/blazer v0.5.3
 	github.com/lib/pq v1.10.4
 	github.com/linxGnu/grocksdb v1.6.38
@@ -156,7 +155,9 @@ require (
 
 require (
 	github.com/fluent/fluent-logger-golang v1.8.0
+	github.com/gobwas/glob v0.2.3
 	github.com/hanwen/go-fuse/v2 v2.1.0
+	github.com/pinterest/knox v0.0.0-20211207222708-13c0858cdca9
 )
 
 require (
@@ -180,6 +181,7 @@ require (
 	github.com/jcmturner/dnsutils/v2 v2.0.0 // indirect
 	github.com/jcmturner/goidentity/v6 v6.0.1 // indirect
 	github.com/jcmturner/rpc/v2 v2.0.3 // indirect
+	github.com/klauspost/cpuid/v2 v2.0.6 // indirect
 	github.com/mattn/go-runewidth v0.0.7 // indirect
 	github.com/mattn/go-sqlite3 v2.0.1+incompatible // indirect
 	github.com/nats-io/nats.go v1.11.0 // indirect
