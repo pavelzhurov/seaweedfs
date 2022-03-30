@@ -51,7 +51,7 @@ require (
 	github.com/google/uuid v1.3.0
 	github.com/google/wire v0.5.0 // indirect
 	github.com/googleapis/gax-go/v2 v2.1.1 // indirect
-	github.com/gorilla/mux v1.7.4
+	github.com/gorilla/mux v1.8.0
 	github.com/grpc-ecosystem/go-grpc-middleware v1.1.0
 	github.com/hailocab/go-hostpool v0.0.0-20160125115350-e80d13ce29ed // indirect
 	github.com/hashicorp/errwrap v1.0.0 // indirect
@@ -144,19 +144,21 @@ require (
 	gopkg.in/jcmturner/rpc.v1 v1.1.0 // indirect
 	modernc.org/b v1.0.0 // indirect
 	modernc.org/cc/v3 v3.35.24 // indirect
-	modernc.org/ccgo/v3 v3.15.17 // indirect
+	modernc.org/ccgo/v3 v3.15.18 // indirect
 	modernc.org/libc v1.14.12 // indirect
 	modernc.org/mathutil v1.4.1 // indirect
 	modernc.org/memory v1.0.7 // indirect
 	modernc.org/opt v0.1.1 // indirect
-	modernc.org/sqlite v1.15.3
+	modernc.org/sqlite v1.15.4
 	modernc.org/strutil v1.1.1 // indirect
 	modernc.org/token v1.0.0 // indirect
 )
 
 require (
 	github.com/fluent/fluent-logger-golang v1.8.0
+	github.com/gobwas/glob v0.2.3
 	github.com/hanwen/go-fuse/v2 v2.1.0
+	github.com/pinterest/knox v0.0.0-20211207222708-13c0858cdca9
 )
 
 require (
