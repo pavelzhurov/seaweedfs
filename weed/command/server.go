@@ -191,10 +191,11 @@ func runServer(cmd *Command, args []string) bool {
 	// ip address
 	masterOptions.ip = serverIp
 	masterOptions.ipBind = serverBindIp
-	filerOptions.masters = pb.ServerAddresses(*masterOptions.peers).ToAddresses()
+	filerOptions.masters = pb.ServerAddresses(*masterOptions.peers).ToAddressMap()
 	filerOptions.ip = serverIp
 	filerOptions.bindIp = serverBindIp
 	s3Options.bindIp = serverBindIp
+	iamOptions.ip = serverBindIp
 	iamOptions.masters = masterOptions.peers
 	serverOptions.v.ip = serverIp
 	serverOptions.v.bindIp = serverBindIp

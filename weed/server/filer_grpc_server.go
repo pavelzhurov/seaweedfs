@@ -148,7 +148,7 @@ func (fs *FilerServer) CreateEntry(ctx context.Context, req *filer_pb.CreateEntr
 	newEntry := filer.FromPbEntry(req.Directory, req.Entry)
 	newEntry.Chunks = chunks
 
-	createErr := fs.filer.CreateEntry(ctx, newEntry, req.OExcl, req.IsFromOtherCluster, req.Signatures)
+	createErr := fs.filer.CreateEntry(ctx, newEntry, req.OExcl, req.IsFromOtherCluster, req.Signatures, req.SkipCheckParentDirectory)
 
 	if createErr == nil {
 		fs.filer.DeleteChunks(garbage)
@@ -271,7 +271,7 @@ func (fs *FilerServer) AppendToEntry(ctx context.Context, req *filer_pb.AppendTo
 		glog.V(0).Infof("MaybeManifestize: %v", err)
 	}
 
-	err = fs.filer.CreateEntry(context.Background(), entry, false, false, nil)
+	err = fs.filer.CreateEntry(context.Background(), entry, false, false, nil, false)
 
 	return &filer_pb.AppendToEntryResponse{}, err
 }
@@ -393,7 +393,7 @@ func (fs *FilerServer) GetFilerConfiguration(ctx context.Context, req *filer_pb.
 	clusterId, _ := fs.filer.Store.KvGet(context.Background(), []byte("clusterId"))
 
 	t := &filer_pb.GetFilerConfigurationResponse{
-		Masters:            pb.ToAddressStrings(fs.option.Masters),
+		Masters:            pb.ToAddressStringsFromMap(fs.option.Masters),
 		Collection:         fs.option.Collection,
 		Replication:        fs.option.DefaultReplication,
 		MaxMb:              uint32(fs.option.MaxMB),

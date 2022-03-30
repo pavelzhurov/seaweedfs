@@ -1,7 +1,9 @@
 package s3api
 
 import (
+	"encoding/xml"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -78,7 +80,15 @@ func (s3a *S3ApiServer) NewMultipartUploadHandler(w http.ResponseWriter, r *http
 
 // CompleteMultipartUploadHandler - Completes multipart upload.
 func (s3a *S3ApiServer) CompleteMultipartUploadHandler(w http.ResponseWriter, r *http.Request) {
+	// https://docs.aws.amazon.com/AmazonS3/latest/API/API_CompleteMultipartUpload.html
+
 	bucket, object := xhttp.GetBucketAndObject(r)
+
+	parts := &CompleteMultipartUpload{}
+	if err := xmlDecoder(r.Body, parts, r.ContentLength); err != nil {
+		s3err.WriteErrorResponse(w, r, s3err.ErrMalformedXML)
+		return
+	}
 
 	// Get upload id.
 	uploadID, _, _, _ := getObjectResources(r.URL.Query())
@@ -87,7 +97,7 @@ func (s3a *S3ApiServer) CompleteMultipartUploadHandler(w http.ResponseWriter, r 
 		Bucket:   aws.String(bucket),
 		Key:      objectKey(aws.String(object)),
 		UploadId: aws.String(uploadID),
-	})
+	}, parts)
 
 	glog.V(2).Info("CompleteMultipartUploadHandler", string(s3err.EncodeXMLResponse(response)), errCode)
 
@@ -290,8 +300,24 @@ func getObjectResources(values url.Values) (uploadID string, partNumberMarker, m
 	return
 }
 
-type byCompletedPartNumber []*s3.CompletedPart
+func xmlDecoder(body io.Reader, v interface{}, size int64) error {
+	var lbody io.Reader
+	if size > 0 {
+		lbody = io.LimitReader(body, size)
+	} else {
+		lbody = body
+	}
+	d := xml.NewDecoder(lbody)
+	d.CharsetReader = func(label string, input io.Reader) (io.Reader, error) {
+		return input, nil
+	}
+	return d.Decode(v)
+}
 
-func (a byCompletedPartNumber) Len() int           { return len(a) }
-func (a byCompletedPartNumber) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-func (a byCompletedPartNumber) Less(i, j int) bool { return *a[i].PartNumber < *a[j].PartNumber }
+type CompleteMultipartUpload struct {
+	Parts []CompletedPart `xml:"Part"`
+}
+type CompletedPart struct {
+	ETag       string
+	PartNumber int
+}
