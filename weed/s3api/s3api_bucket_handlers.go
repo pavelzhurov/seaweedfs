@@ -157,7 +157,9 @@ func (s3a *S3ApiServer) DeleteBucketHandler(w http.ResponseWriter, r *http.Reque
 
 	entries, _, _ := s3a.list(s3a.option.BucketsPath+"/"+bucket, "", "", false, 1)
 
-	if len(entries) != 0 {
+	// .uploads cleaning at background process, and is not visible to client in ListObjects,
+	// so, if only entry is '.uploads' we can delete entire bucket
+	if len(entries) != 0 && !(len(entries) == 1 && entries[0].Name == ".uploads") {
 		s3err.WriteErrorResponse(w, r, s3err.ErrBucketNotEmpty)
 		return
 	}

@@ -68,9 +68,19 @@ func (s3a *S3ApiServer) completeMultipartUpload(input *s3.CompleteMultipartUploa
 	glog.V(2).Infof("completeMultipartUpload input %v", input)
 
 	completedParts := parts.Parts
-	sort.Slice(completedParts, func(i, j int) bool {
-		return completedParts[i].PartNumber < completedParts[j].PartNumber
-	})
+
+	if sorted := sort.SliceIsSorted(completedParts, func(i, j int) bool {
+		return completedParts[i].PartNumber <= completedParts[j].PartNumber
+	}); !sorted {
+		glog.Errorf("completeMultipartUpload %s %s parts: %v error: parts not sorted", *input.Bucket, *input.UploadId, completedParts)
+		return nil, s3err.ErrInvalidPartOrder
+	}
+
+	number2parts := map[int]CompletedPart{}
+
+	for _, part := range completedParts {
+		number2parts[part.PartNumber] = part
+	}
 
 	uploadDirectory := s3a.genUploadsFolder(*input.Bucket) + "/" + *input.UploadId
 
@@ -93,10 +103,20 @@ func (s3a *S3ApiServer) completeMultipartUpload(input *s3.CompleteMultipartUploa
 
 	for _, entry := range entries {
 		if strings.HasSuffix(entry.Name, ".part") && !entry.IsDirectory {
-			_, found := findByPartNumber(entry.Name, completedParts)
-			if !found {
+			partNumber, err := getPartNumberFromFileName(entry.Name)
+			if err != nil {
+				// cannot convert to part number, but possibly not breaks logic
 				continue
 			}
+
+			_, found := number2parts[partNumber]
+			if !found {
+				glog.Errorf("completeMultipartUpload %s %s error: part '%d' is absent in completed parts", *input.Bucket, *input.UploadId, partNumber)
+				return nil, s3err.ErrInvalidPart
+			}
+
+			delete(number2parts, partNumber)
+
 			for _, chunk := range entry.Chunks {
 				p := &filer_pb.FileChunk{
 					FileId:    chunk.GetFileIdString(),
@@ -110,6 +130,11 @@ func (s3a *S3ApiServer) completeMultipartUpload(input *s3.CompleteMultipartUploa
 				offset += int64(chunk.Size)
 			}
 		}
+	}
+
+	if len(number2parts) > 0 {
+		glog.Errorf("completeMultipartUpload %s %s error: parts '%v' are absent in filer entries", *input.Bucket, *input.UploadId, number2parts)
+		return nil, s3err.ErrInvalidPart
 	}
 
 	entryName := filepath.Base(*input.Key)
@@ -164,18 +189,8 @@ func (s3a *S3ApiServer) completeMultipartUpload(input *s3.CompleteMultipartUploa
 	return
 }
 
-func findByPartNumber(fileName string, parts []CompletedPart) (etag string, found bool) {
-	partNumber, formatErr := strconv.Atoi(fileName[:4])
-	if formatErr != nil {
-		return
-	}
-	x := sort.Search(len(parts), func(i int) bool {
-		return parts[i].PartNumber >= partNumber
-	})
-	if parts[x].PartNumber != partNumber {
-		return
-	}
-	return parts[x].ETag, true
+func getPartNumberFromFileName(name string) (int, error) {
+	return strconv.Atoi(name[:4])
 }
 
 func (s3a *S3ApiServer) abortMultipartUpload(input *s3.AbortMultipartUploadInput) (output *s3.AbortMultipartUploadOutput, code s3err.ErrorCode) {
