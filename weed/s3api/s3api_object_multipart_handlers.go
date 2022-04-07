@@ -250,7 +250,9 @@ func (s3a *S3ApiServer) PutObjectPartHandler(w http.ResponseWriter, r *http.Requ
 	glog.V(2).Infof("PutObjectPartHandler %s %s %04d", bucket, uploadID, partID)
 
 	uploadUrl := fmt.Sprintf("http://%s%s/%s/%04d.part?collection=%s",
-		s3a.option.Filer.ToHttpAddress(), s3a.genUploadsFolder(bucket), uploadID, partID, bucket)
+		// Name of the filer collection is equal to the BucketPath without leading slash
+		s3a.option.Filer.ToHttpAddress(), s3a.genUploadsFolder(bucket), uploadID, partID, s3a.option.BucketsPath[1:])
+	glog.V(3).Info(uploadUrl)
 
 	if partID == 1 && r.Header.Get("Content-Type") == "" {
 		dataReader = mimeDetect(r, dataReader)

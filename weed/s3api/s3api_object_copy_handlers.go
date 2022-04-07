@@ -74,7 +74,8 @@ func (s3a *S3ApiServer) CopyObjectHandler(w http.ResponseWriter, r *http.Request
 	}
 
 	dstUrl := fmt.Sprintf("http://%s%s/%s%s?collection=%s",
-		s3a.option.Filer.ToHttpAddress(), s3a.option.BucketsPath, dstBucket, urlPathEscape(dstObject), dstBucket)
+		// Name of the filer collection is equal to the BucketPath without leading slash
+		s3a.option.Filer.ToHttpAddress(), s3a.option.BucketsPath, dstBucket, urlPathEscape(dstObject), s3a.option.BucketsPath[1:])
 	srcUrl := fmt.Sprintf("http://%s%s/%s%s",
 		s3a.option.Filer.ToHttpAddress(), s3a.option.BucketsPath, srcBucket, urlPathEscape(srcObject))
 
@@ -157,7 +158,8 @@ func (s3a *S3ApiServer) CopyObjectPartHandler(w http.ResponseWriter, r *http.Req
 	rangeHeader := r.Header.Get("x-amz-copy-source-range")
 
 	dstUrl := fmt.Sprintf("http://%s%s/%s/%04d.part?collection=%s",
-		s3a.option.Filer.ToHttpAddress(), s3a.genUploadsFolder(dstBucket), uploadID, partID, dstBucket)
+		// Name of the filer collection is equal to the BucketPath without leading slash
+		s3a.option.Filer.ToHttpAddress(), s3a.genUploadsFolder(dstBucket), uploadID, partID, s3a.option.BucketsPath[1:])
 	srcUrl := fmt.Sprintf("http://%s%s/%s%s",
 		s3a.option.Filer.ToHttpAddress(), s3a.option.BucketsPath, srcBucket, urlPathEscape(srcObject))
 
