@@ -168,7 +168,7 @@ func UnmarshalAndCheckACL(acPolicyRaw []byte) (acPolicyMarshal *AccessControlPol
 
 func (s3a *S3ApiServer) GetUsernameAndId(request *http.Request) (username string, id ID, errCode s3err.ErrorCode) {
 	if s3a.iam.isEnabled() {
-		if ident, errCode := s3a.iam.authRequest(request, s3_constants.ACTION_ADMIN, s3a); errCode != s3err.ErrNone {
+		if ident, errCode := s3a.iam.AuthRequest(request, s3_constants.ACTION_ADMIN, s3a); errCode != s3err.ErrNone {
 			return "", "", errCode
 		} else {
 			username = ident.Name

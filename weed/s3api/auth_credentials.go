@@ -209,7 +209,7 @@ func (iam *IdentityAccessManagement) Auth(f http.HandlerFunc, action Action, s3a
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
-		identity, errCode := iam.authRequest(r, action, s3api)
+		identity, errCode := iam.AuthRequest(r, action, s3api)
 		if errCode == s3err.ErrNone {
 			if identity != nil && identity.Name != "" {
 				r.Header.Set(xhttp.AmzIdentityId, identity.Name)
@@ -227,7 +227,7 @@ func (iam *IdentityAccessManagement) Auth(f http.HandlerFunc, action Action, s3a
 }
 
 // check whether the request has valid access keys
-func (iam *IdentityAccessManagement) authRequest(r *http.Request, action Action, s3api AuthS3API) (*Identity, s3err.ErrorCode) {
+func (iam *IdentityAccessManagement) AuthRequest(r *http.Request, action Action, s3api AuthS3API) (*Identity, s3err.ErrorCode) {
 	var identity *Identity
 	var s3Err s3err.ErrorCode
 	var found bool
