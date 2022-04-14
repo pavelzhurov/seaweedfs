@@ -96,6 +96,35 @@ func (s3a *S3ApiServer) CopyObjectHandler(w http.ResponseWriter, r *http.Request
 
 	setEtag(w, etag)
 
+	// Access Control Policy
+	username, id, errCode := s3a.GetUsernameAndId(r)
+	if errCode != s3err.ErrNone {
+		s3err.WriteErrorResponse(w, r, errCode)
+		return
+	}
+
+	ac_policy, errCode := s3a.CreateACPolicyFromTemplate(id, username, r, true)
+	if errCode != s3err.ErrNone {
+		s3err.WriteErrorResponse(w, r, errCode)
+		return
+	}
+
+	target := util.FullPath(fmt.Sprintf("%s/%s%s", s3a.option.BucketsPath, dstBucket, dstObject))
+	dir, name = target.DirAndName()
+	err = s3a.setACL(dir, name, ac_policy)
+	if err != nil {
+		glog.Errorf("Error while creating default Access Policy: %v", err)
+		s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
+		return
+	}
+	err = s3a.setOwner(dir, name, id)
+	if err != nil {
+		glog.Errorf("Error while setting owner: %v", err)
+		s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
+		return
+	}
+	glog.V(4).Infof("Created default access control policy. Object %s is owned by %s", dstBucket+dstObject, username)
+
 	response := CopyObjectResult{
 		ETag:         etag,
 		LastModified: time.Now().UTC(),
