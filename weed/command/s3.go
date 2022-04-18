@@ -38,6 +38,8 @@ type S3Options struct {
 	auditLogConfig   *string
 	localFilerSocket *string
 	bucketsCacheTTL  *uint
+	iamEnabled       *bool
+	kmsEnabled       *bool
 }
 
 func init() {
@@ -53,6 +55,8 @@ func init() {
 	s3StandaloneOptions.metricsHttpPort = cmdS3.Flag.Int("metricsPort", 0, "Prometheus metrics listen port")
 	s3StandaloneOptions.allowEmptyFolder = cmdS3.Flag.Bool("allowEmptyFolder", true, "allow empty folders")
 	s3StandaloneOptions.bucketsCacheTTL = cmdS3.Flag.Uint("bucketsCacheTTL", 600, "TTL of buckets cache entries in seconds. default is 600.")
+	s3StandaloneOptions.iamEnabled = cmdS3.Flag.Bool("iamEnabled", false, "enable access management via OPA")
+	s3StandaloneOptions.kmsEnabled = cmdS3.Flag.Bool("kmsEnabled", false, "enable synchronization with KMS for Access/Secret keys")
 }
 
 var cmdS3 = &Command{
@@ -197,6 +201,8 @@ func (s3opt *S3Options) startS3Server() bool {
 		JWTPublicKey:     RSAPubKey,
 		LocalFilerSocket: s3opt.localFilerSocket,
 		BucketsCacheTTL:  *s3opt.bucketsCacheTTL,
+		IAMEnabled:       *s3opt.iamEnabled,
+		KMSEnabled:       *s3opt.kmsEnabled,
 	})
 	if s3ApiServer_err != nil {
 		glog.Fatalf("S3 API Server startup error: %v", s3ApiServer_err)

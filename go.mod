@@ -156,9 +156,8 @@ require (
 
 require (
 	github.com/fluent/fluent-logger-golang v1.8.0
-	github.com/gobwas/glob v0.2.3
 	github.com/hanwen/go-fuse/v2 v2.1.0
-	github.com/pinterest/knox v0.0.0-20211207222708-13c0858cdca9
+	github.com/pavelzhurov/authz-utils v0.1.3
 )
 
 require (
@@ -176,8 +175,12 @@ require (
 	github.com/aws/smithy-go v1.8.0 // indirect
 	github.com/d4l3k/messagediff v1.2.1 // indirect
 	github.com/fclairamb/go-log v0.1.0 // indirect
+	github.com/gobwas/glob v0.2.3 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
+	github.com/golang/glog v1.0.0 // indirect
 	github.com/googleapis/google-cloud-go-testing v0.0.0-20200911160855-bcd43fbb19e8 // indirect
+	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
+	github.com/hashicorp/go-retryablehttp v0.7.1 // indirect
 	github.com/jcmturner/aescts/v2 v2.0.0 // indirect
 	github.com/jcmturner/dnsutils/v2 v2.0.0 // indirect
 	github.com/jcmturner/goidentity/v6 v6.0.1 // indirect
@@ -188,6 +191,7 @@ require (
 	github.com/nats-io/nkeys v0.3.0 // indirect
 	github.com/nats-io/nuid v1.0.1 // indirect
 	github.com/philhofer/fwd v1.1.1 // indirect
+	github.com/pinterest/knox v0.0.0-20211207222708-13c0858cdca9 // indirect
 	github.com/rwcarlsen/goexif v0.0.0-20190401172101-9e8deecbddbd // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/tinylib/msgp v1.1.6 // indirect

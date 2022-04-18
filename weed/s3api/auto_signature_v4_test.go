@@ -19,6 +19,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/chrislusf/seaweedfs/weed/s3api/s3err"
+	"github.com/karlseguin/ccache/v2"
 )
 
 // TestIsRequestPresignedSignatureV4 - Test validates the logic for presign signature verision v4 detection.
@@ -59,17 +60,13 @@ func TestIsRequestPresignedSignatureV4(t *testing.T) {
 func TestIsReqAuthenticated(t *testing.T) {
 	option := S3ApiServerOption{}
 	iam := NewIdentityAccessManagement(&option)
-	iam.identities = []*Identity{
-		{
-			Name: "someone",
-			Credentials: []*Credential{
-				{
-					AccessKey: "access_key_1",
-					SecretKey: "secret_key_1",
-				},
-			},
-			Actions: nil,
-		},
+	iam.identities = make(map[IdentityName]*Identity)
+	credentials := ccache.New(ccache.Configure())
+	credentials.Set("access_key_1", "secret_key_1", MaxDuration)
+	iam.identities["someone"] = &Identity{
+		Name: "someone",
+		Credentials: credentials,
+		Actions: nil,
 	}
 
 	// List of test cases for validating http request authentication.
@@ -95,17 +92,13 @@ func TestIsReqAuthenticated(t *testing.T) {
 func TestCheckAdminRequestAuthType(t *testing.T) {
 	option := S3ApiServerOption{}
 	iam := NewIdentityAccessManagement(&option)
-	iam.identities = []*Identity{
-		{
-			Name: "someone",
-			Credentials: []*Credential{
-				{
-					AccessKey: "access_key_1",
-					SecretKey: "secret_key_1",
-				},
-			},
-			Actions: nil,
-		},
+	iam.identities = make(map[IdentityName]*Identity)
+	credentials := ccache.New(ccache.Configure())
+	credentials.Set("access_key_1", "secret_key_1", MaxDuration)
+	iam.identities["someone"] = &Identity{
+		Name: "someone",
+		Credentials: credentials,
+		Actions: nil,
 	}
 
 	testCases := []struct {
