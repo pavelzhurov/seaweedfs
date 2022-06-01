@@ -166,7 +166,7 @@ func (s3a *S3ApiServer) listFilerEntries(bucket string, originalPrefix string, m
 					ETag:         "\"" + filer.ETag(entry) + "\"",
 					Size:         int64(filer.FileSize(entry)),
 					Owner: CanonicalUser{
-						ID:          fmt.Sprintf("%x", entry.Attributes.Uid),
+						ID:          fmt.Sprintf("%s", entry.Extended[xhttp.AmzIdentityId]),
 						DisplayName: entry.Attributes.UserName,
 					},
 					StorageClass: StorageClass(storageClass),

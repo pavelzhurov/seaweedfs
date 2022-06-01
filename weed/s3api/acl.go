@@ -248,6 +248,11 @@ func (acPolicy *AccessControlPolicyMarshal) addUserGrant(grantee string, permiss
 	return s3err.ErrNone
 }
 
+func (acPolicy *AccessControlPolicyMarshal) removeGrants() {
+	acPolicy.AccessControlList = AccessControlList{}
+	return
+}
+
 func (s3a *S3ApiServer) AddOwnerAndPermissionsFromHeaders(acPolicy *AccessControlPolicyMarshal, r *http.Request, isObject bool, owner string) (acPolicyRaw []byte, errCode s3err.ErrorCode) {
 	if acPolicy.Owner.ID == "" {
 		username, id, errCode := s3a.GetUsernameAndId(r)
@@ -311,11 +316,13 @@ func (s3a *S3ApiServer) AddOwnerAndPermissionsFromHeaders(acPolicy *AccessContro
 			}
 			switch values[0] {
 			case "private":
+				acPolicy.removeGrants()
 				errCode := acPolicy.addUserGrant(owner, PermissionFullControl)
 				if errCode != s3err.ErrNone {
 					return nil, errCode
 				}
 			case "public-read":
+				acPolicy.removeGrants()
 				errCode := acPolicy.addUserGrant(owner, PermissionFullControl)
 				if errCode != s3err.ErrNone {
 					return nil, errCode
@@ -325,6 +332,7 @@ func (s3a *S3ApiServer) AddOwnerAndPermissionsFromHeaders(acPolicy *AccessContro
 					return nil, errCode
 				}
 			case "public-read-write":
+				acPolicy.removeGrants()
 				errCode := acPolicy.addUserGrant(owner, PermissionFullControl)
 				if errCode != s3err.ErrNone {
 					return nil, errCode
@@ -340,6 +348,7 @@ func (s3a *S3ApiServer) AddOwnerAndPermissionsFromHeaders(acPolicy *AccessContro
 			case "aws-exec-read":
 				return nil, s3err.ErrNotImplemented
 			case "authenticated-read":
+				acPolicy.removeGrants()
 				errCode = acPolicy.addUserGrant(owner, PermissionFullControl)
 				if errCode != s3err.ErrNone {
 					return nil, errCode
@@ -352,6 +361,7 @@ func (s3a *S3ApiServer) AddOwnerAndPermissionsFromHeaders(acPolicy *AccessContro
 				if !isObject {
 					return nil, s3err.ErrMalformedACL
 				}
+				acPolicy.removeGrants()
 				errCode := acPolicy.addUserGrant(owner, PermissionFullControl)
 				if errCode != s3err.ErrNone {
 					return nil, errCode
@@ -364,6 +374,7 @@ func (s3a *S3ApiServer) AddOwnerAndPermissionsFromHeaders(acPolicy *AccessContro
 				if !isObject {
 					return nil, s3err.ErrMalformedACL
 				}
+				acPolicy.removeGrants()
 				errCode := acPolicy.addUserGrant(owner, PermissionFullControl)
 				if errCode != s3err.ErrNone {
 					return nil, errCode
