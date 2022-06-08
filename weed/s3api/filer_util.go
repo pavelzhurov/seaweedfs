@@ -3,10 +3,12 @@ package s3api
 import (
 	"context"
 	"fmt"
+	"strings"
+
 	"github.com/chrislusf/seaweedfs/weed/glog"
 	"github.com/chrislusf/seaweedfs/weed/pb/filer_pb"
+	xhttp "github.com/chrislusf/seaweedfs/weed/s3api/http"
 	"github.com/chrislusf/seaweedfs/weed/util"
-	"strings"
 )
 
 func (s3a *S3ApiServer) mkdir(parentDirectoryPath string, dirName string, fn func(entry *filer_pb.Entry)) error {
@@ -97,4 +99,32 @@ func objectKey(key *string) *string {
 		return &t
 	}
 	return key
+}
+
+func (s3a *S3ApiServer) setSSEKeyID(parentDirectoryPath, entryName string, key string) (err error) {
+	return s3a.WithFilerClient(false, func(client filer_pb.SeaweedFilerClient) error {
+
+		resp, err := filer_pb.LookupEntry(client, &filer_pb.LookupDirectoryEntryRequest{
+			Directory: parentDirectoryPath,
+			Name:      entryName,
+		})
+		if err != nil {
+			glog.V(3).Infof("Can't obtain entry: directory %s, name %s", parentDirectoryPath, entryName)
+			return err
+		}
+
+		if resp.Entry.Extended == nil {
+			resp.Entry.Extended = make(map[string][]byte)
+		}
+
+		resp.Entry.Extended[xhttp.AmzSSEKMSKeyId] = []byte(key)
+
+		return filer_pb.UpdateEntry(client, &filer_pb.UpdateEntryRequest{
+			Directory:          parentDirectoryPath,
+			Entry:              resp.Entry,
+			IsFromOtherCluster: false,
+			Signatures:         nil,
+		})
+
+	})
 }

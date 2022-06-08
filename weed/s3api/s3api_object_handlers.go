@@ -3,13 +3,16 @@ package s3api
 import (
 	"bytes"
 	"crypto/md5"
+	"encoding/base64"
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -139,6 +142,9 @@ func (s3a *S3ApiServer) PutObjectHandler(w http.ResponseWriter, r *http.Request)
 		glog.V(4).Infof("Created default access control policy. Object %s is owned by %s", bucket+object, username)
 	}
 
+	target := util.FullPath(fmt.Sprintf("%s/%s%s", s3a.option.BucketsPath, bucket, object))
+	dir, name := target.DirAndName()
+
 	if strings.HasSuffix(object, "/") {
 		if err := s3a.mkdir(s3a.option.BucketsPath, bucket+object, fn); err != nil {
 			s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
@@ -150,7 +156,76 @@ func (s3a *S3ApiServer) PutObjectHandler(w http.ResponseWriter, r *http.Request)
 			dataReader = mimeDetect(r, dataReader)
 		}
 
-		etag, errCode := s3a.putToFiler(r, uploadUrl, dataReader)
+		var etag string
+		var errCode s3err.ErrorCode
+	Loop:
+		for header := range r.Header {
+			switch header {
+			case xhttp.AmzSSECustomerKey:
+				plaintext, err := ioutil.ReadAll(dataReader)
+				if err != nil {
+					s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
+					return
+				}
+				key, _ := base64.StdEncoding.DecodeString(r.Header[header][0])
+				cipher, err := util.Encrypt(plaintext, []byte(key))
+				if err != nil {
+					glog.Errorf("Can't encrtypt with customer provided key: %v", err)
+					s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
+					return
+				}
+				r.Header.Set("Content-Length", strconv.Itoa(len(cipher)))
+				hash := md5.New()
+				r.Header.Set("Content-Md5", base64.StdEncoding.EncodeToString((hash.Sum(cipher))))
+				encryptDataReader := ioutil.NopCloser(bytes.NewBuffer(cipher))
+
+				etag, errCode = s3a.putToFiler(r, uploadUrl, encryptDataReader)
+				break Loop
+			case xhttp.AmzSSEKMSKeyId:
+				// Test key
+				token := "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJwcmVmZXJyZWRfdXNlcm5hbWUiOiI5YjEzMzAzYS1hMDM1LTRlZmEtYmM1MC1hMDdjMDg1ZjZkOWQiLCJzdWIiOiI5YjEzMzAzYS1hMDM1LTRlZmEtYmM1MC1hMDdjMDg1ZjZkOWQiLCJpYXQiOjE1MTYyMzkwMjJ9.l0VJ98aY7XqeNcRz-IqEeMO_HtmpOYSApdwBXdKRDzcDTajnH9n9od7c7npFFyzuNAn86unVqse6iCw3jAu7QZln-b9ehDc-6rRIw8v8at4pfYtreqB11V5iBjKSxLZjLYZOGiNDSySfY6Uult_55m20elEkIHsnKqZ4RCBhiDq_2K6mTCNGtk2eCs2cF-AOK50ztqfjdyxH78wgzW2AYhnMUgrE7jE81JydtAb7KVepMcNqEwugJjopoG9LDDVsrqqBFp5iFbBAX_AEvdgnGrg8dUjqNDnsiVonuzsIs3quvUmPJNXoq6ww1hfijyOhNCQNhwjEb3kxHgQgwcYvEg"
+				// Test endpoint
+				cryptorEndpoint := "http://localhost:9090"
+				if err != nil {
+					s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
+					return
+				}
+
+				keyID := r.Header[header][0]
+				cryptorRequest, err := http.NewRequest("POST", cryptorEndpoint+"/encrypt/"+keyID, dataReader)
+				if err != nil {
+					glog.Errorf("couldn't form cryptor request %s: %v", cryptorEndpoint+"/encrypt/"+keyID, err)
+					s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
+					return
+				}
+				cryptorRequest.Header.Set("Authorization", token)
+
+				cryptorResp, postErr := s3a.client.Do(cryptorRequest)
+
+				if postErr != nil {
+					glog.Errorf("post to cryptor: %v", postErr)
+					s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
+					return
+				}
+				if cryptorResp.StatusCode != 200 {
+					errBody, _ := ioutil.ReadAll(cryptorResp.Body)
+					glog.Errorf("not successfull code %d form cryptor: %s", cryptorResp.StatusCode, errBody)
+					s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
+					return
+				}
+				defer cryptorResp.Body.Close()
+
+				r.Header.Set("Content-Length", cryptorResp.Header.Get("Content-Length"))
+				r.Header.Set("Content-Md5", cryptorResp.Header.Get("Content-Md5"))
+
+				etag, errCode = s3a.putToFiler(r, uploadUrl, cryptorResp.Body)
+				s3a.setSSEKeyID(dir, name, keyID)
+				break Loop
+			}
+		}
+		if etag == "" {
+			etag, errCode = s3a.putToFiler(r, uploadUrl, dataReader)
+		}
 
 		if errCode != s3err.ErrNone {
 			s3err.WriteErrorResponse(w, r, errCode)
@@ -159,8 +234,6 @@ func (s3a *S3ApiServer) PutObjectHandler(w http.ResponseWriter, r *http.Request)
 
 		setEtag(w, etag)
 
-		target := util.FullPath(fmt.Sprintf("%s/%s%s", s3a.option.BucketsPath, bucket, object))
-		dir, name := target.DirAndName()
 		err = s3a.setACL(dir, name, ac_policy)
 		if err != nil {
 			glog.Errorf("Error while creating default Access Policy: %v", err)
@@ -205,7 +278,7 @@ func (s3a *S3ApiServer) GetObjectHandler(w http.ResponseWriter, r *http.Request)
 
 	destUrl := s3a.toFilerUrl(bucket, object)
 
-	s3a.proxyToFiler(w, r, destUrl, false, passThroughResponse)
+	s3a.proxyToFiler(w, r, destUrl, false, s3a.decryptIfNecessary)
 }
 
 func (s3a *S3ApiServer) HeadObjectHandler(w http.ResponseWriter, r *http.Request) {
@@ -412,8 +485,71 @@ func (s3a *S3ApiServer) proxyToFiler(w http.ResponseWriter, r *http.Request, des
 		}
 	}
 
+	if keyID, ok := r.Header[xhttp.AmzSSECustomerKey]; ok {
+		cipher, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
+			return
+		}
+		key, _ := base64.StdEncoding.DecodeString(keyID[0])
+		plaintext, err := util.Decrypt(cipher, key)
+		if err != nil {
+			glog.Errorf("couldn't decrypt data with provided key: %s. error: %v", key, err)
+			s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
+			return
+		}
+		resp.Header.Set("Content-Length", strconv.Itoa(len(plaintext)))
+		hash := md5.New()
+		resp.Header.Set("Content-Md5", base64.StdEncoding.EncodeToString((hash.Sum(plaintext))))
+		resp.Body = ioutil.NopCloser(bytes.NewBuffer(plaintext))
+	}
+
 	responseStatusCode := responseFn(resp, w)
 	s3err.PostLog(r, responseStatusCode, s3err.ErrNone)
+}
+
+func (s3a *S3ApiServer) decryptIfNecessary(proxyResponse *http.Response, w http.ResponseWriter) (statusCode int) {
+	if proxyResponse.Header.Get("Content-Range") != "" && proxyResponse.StatusCode == 200 {
+		w.WriteHeader(http.StatusPartialContent)
+		statusCode = http.StatusPartialContent
+	} else {
+		statusCode = proxyResponse.StatusCode
+	}
+	if keyID := proxyResponse.Header.Get(xhttp.AmzSSEKMSKeyId); keyID != "" {
+		// Test key
+		token := "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJwcmVmZXJyZWRfdXNlcm5hbWUiOiI5YjEzMzAzYS1hMDM1LTRlZmEtYmM1MC1hMDdjMDg1ZjZkOWQiLCJzdWIiOiI5YjEzMzAzYS1hMDM1LTRlZmEtYmM1MC1hMDdjMDg1ZjZkOWQiLCJpYXQiOjE1MTYyMzkwMjJ9.l0VJ98aY7XqeNcRz-IqEeMO_HtmpOYSApdwBXdKRDzcDTajnH9n9od7c7npFFyzuNAn86unVqse6iCw3jAu7QZln-b9ehDc-6rRIw8v8at4pfYtreqB11V5iBjKSxLZjLYZOGiNDSySfY6Uult_55m20elEkIHsnKqZ4RCBhiDq_2K6mTCNGtk2eCs2cF-AOK50ztqfjdyxH78wgzW2AYhnMUgrE7jE81JydtAb7KVepMcNqEwugJjopoG9LDDVsrqqBFp5iFbBAX_AEvdgnGrg8dUjqNDnsiVonuzsIs3quvUmPJNXoq6ww1hfijyOhNCQNhwjEb3kxHgQgwcYvEg"
+		// Test endpoint
+		cryptorEndpoint := "http://localhost:9090"
+		cryptorRequest, err := http.NewRequest("POST", cryptorEndpoint+"/decrypt/"+keyID, proxyResponse.Body)
+		if err != nil {
+			glog.Errorf("couldn't form cryptor request %s: %v", cryptorEndpoint+"/decrypt/"+keyID, err)
+			w.WriteHeader(500)
+			return 500
+		}
+		cryptorRequest.Header.Set("Authorization", token)
+
+		cryptorResp, postErr := s3a.client.Do(cryptorRequest)
+
+		if postErr != nil {
+			glog.Errorf("post to cryptor: %v", postErr)
+			w.WriteHeader(500)
+			return 500
+		}
+		if cryptorResp.StatusCode != 200 {
+			errBody, _ := ioutil.ReadAll(cryptorResp.Body)
+			glog.Errorf("not successfull code %d form cryptor: %s", cryptorResp.StatusCode, errBody)
+			w.WriteHeader(cryptorResp.StatusCode)
+			return cryptorResp.StatusCode
+		}
+		proxyResponse.Body = cryptorResp.Body
+	}
+	w.WriteHeader(statusCode)
+	buf := mem.Allocate(128 * 1024)
+	defer mem.Free(buf)
+	if n, err := io.CopyBuffer(w, proxyResponse.Body, buf); err != nil {
+		glog.V(1).Infof("passthrough decrypted response read %d bytes: %v", n, err)
+	}
+	return statusCode
 }
 
 func passThroughResponse(proxyResponse *http.Response, w http.ResponseWriter) (statusCode int) {

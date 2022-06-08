@@ -43,6 +43,10 @@ const (
 	AmzGrantWrite       = "X-Amz-Grant-Write"
 	AmzGrantWriteACP    = "X-Amz-Grant-Write-Acp"
 	AmzGrantPrefix      = "X-Amz-Grant-"
+
+	// S3 SSE
+	AmzSSEKMSKeyId = "X-Amz-Server-Side-Encryption-Aws-Kms-Key-Id"
+	AmzSSECustomerKey = "X-Amz-Server-Side-Encryption-Customer-Key"
 )
 
 // Non-Standard S3 HTTP request constants
