@@ -3,6 +3,8 @@ package s3api
 import (
 	"bytes"
 	"crypto/md5"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"encoding/xml"
@@ -11,6 +13,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -182,11 +185,9 @@ func (s3a *S3ApiServer) PutObjectHandler(w http.ResponseWriter, r *http.Request)
 				etag, errCode = s3a.putToFiler(r, uploadUrl, encryptDataReader)
 				break Loop
 			case xhttp.AmzSSEKMSKeyId:
-				// Test key
-				token := "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJwcmVmZXJyZWRfdXNlcm5hbWUiOiI5YjEzMzAzYS1hMDM1LTRlZmEtYmM1MC1hMDdjMDg1ZjZkOWQiLCJzdWIiOiI5YjEzMzAzYS1hMDM1LTRlZmEtYmM1MC1hMDdjMDg1ZjZkOWQiLCJpYXQiOjE1MTYyMzkwMjJ9.l0VJ98aY7XqeNcRz-IqEeMO_HtmpOYSApdwBXdKRDzcDTajnH9n9od7c7npFFyzuNAn86unVqse6iCw3jAu7QZln-b9ehDc-6rRIw8v8at4pfYtreqB11V5iBjKSxLZjLYZOGiNDSySfY6Uult_55m20elEkIHsnKqZ4RCBhiDq_2K6mTCNGtk2eCs2cF-AOK50ztqfjdyxH78wgzW2AYhnMUgrE7jE81JydtAb7KVepMcNqEwugJjopoG9LDDVsrqqBFp5iFbBAX_AEvdgnGrg8dUjqNDnsiVonuzsIs3quvUmPJNXoq6ww1hfijyOhNCQNhwjEb3kxHgQgwcYvEg"
-				// Test endpoint
-				cryptorEndpoint := "http://localhost:9090"
+				cryptorEndpoint, err := s3a.setUpCryptorClient()
 				if err != nil {
+					glog.Error(err)
 					s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
 					return
 				}
@@ -198,7 +199,6 @@ func (s3a *S3ApiServer) PutObjectHandler(w http.ResponseWriter, r *http.Request)
 					s3err.WriteErrorResponse(w, r, s3err.ErrInternalError)
 					return
 				}
-				cryptorRequest.Header.Set("Authorization", token)
 
 				cryptorResp, postErr := s3a.client.Do(cryptorRequest)
 
@@ -250,6 +250,42 @@ func (s3a *S3ApiServer) PutObjectHandler(w http.ResponseWriter, r *http.Request)
 	}
 
 	writeSuccessResponseEmpty(w, r)
+}
+
+func (s3a *S3ApiServer) setUpCryptorClient() (cryptorEndpoint string, err error) {
+	cryptorEndpoint, ok := os.LookupEnv("CRYPTOR_ENDPOINT")
+	if !ok {
+		return cryptorEndpoint, fmt.Errorf("Cryptor endpoint is not provided")
+	}
+
+	splittedEndpoint := strings.Split(cryptorEndpoint, "//")
+	if len(splittedEndpoint) < 2 {
+		return cryptorEndpoint, fmt.Errorf("Bad cryptor endpoint")
+	}
+
+	tlsConfig := &tls.Config{
+		ServerName: splittedEndpoint[1],
+	}
+	_, ok = os.LookupEnv("SPIFFE_CLIENT")
+	if ok {
+		caCertString, ok := os.LookupEnv("KNOX_SERVER_CA")
+		if !ok {
+			return cryptorEndpoint, fmt.Errorf("knox CA cert is not provided")
+		}
+		caCertPool := x509.NewCertPool()
+		caCertPool.AppendCertsFromPEM([]byte(caCertString))
+		certs, err := LoadCertificates([]string{"/certs/*.key", "/certs/*.pem"})
+		if err == nil {
+			tlsConfig.Certificates = certs
+			tlsConfig.RootCAs = caCertPool
+		}
+	} else {
+		return cryptorEndpoint, fmt.Errorf("SPIFFE certs are not provided")
+	}
+
+	s3a.client.Transport = &http.Transport{TLSClientConfig: tlsConfig}
+	
+	return
 }
 
 func urlPathEscape(object string) string {
@@ -516,17 +552,20 @@ func (s3a *S3ApiServer) decryptIfNecessary(proxyResponse *http.Response, w http.
 		statusCode = proxyResponse.StatusCode
 	}
 	if keyID := proxyResponse.Header.Get(xhttp.AmzSSEKMSKeyId); keyID != "" {
-		// Test key
-		token := "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJwcmVmZXJyZWRfdXNlcm5hbWUiOiI5YjEzMzAzYS1hMDM1LTRlZmEtYmM1MC1hMDdjMDg1ZjZkOWQiLCJzdWIiOiI5YjEzMzAzYS1hMDM1LTRlZmEtYmM1MC1hMDdjMDg1ZjZkOWQiLCJpYXQiOjE1MTYyMzkwMjJ9.l0VJ98aY7XqeNcRz-IqEeMO_HtmpOYSApdwBXdKRDzcDTajnH9n9od7c7npFFyzuNAn86unVqse6iCw3jAu7QZln-b9ehDc-6rRIw8v8at4pfYtreqB11V5iBjKSxLZjLYZOGiNDSySfY6Uult_55m20elEkIHsnKqZ4RCBhiDq_2K6mTCNGtk2eCs2cF-AOK50ztqfjdyxH78wgzW2AYhnMUgrE7jE81JydtAb7KVepMcNqEwugJjopoG9LDDVsrqqBFp5iFbBAX_AEvdgnGrg8dUjqNDnsiVonuzsIs3quvUmPJNXoq6ww1hfijyOhNCQNhwjEb3kxHgQgwcYvEg"
-		// Test endpoint
-		cryptorEndpoint := "http://localhost:9090"
+		cryptorEndpoint, err := s3a.setUpCryptorClient()
+		if err != nil {
+			glog.Error(err)
+			w.WriteHeader(500)
+			return 500
+		}
+
 		cryptorRequest, err := http.NewRequest("POST", cryptorEndpoint+"/decrypt/"+keyID, proxyResponse.Body)
 		if err != nil {
 			glog.Errorf("couldn't form cryptor request %s: %v", cryptorEndpoint+"/decrypt/"+keyID, err)
 			w.WriteHeader(500)
 			return 500
 		}
-		cryptorRequest.Header.Set("Authorization", token)
+		// cryptorRequest.Header.Set("Authorization", token)
 
 		cryptorResp, postErr := s3a.client.Do(cryptorRequest)
 
