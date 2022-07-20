@@ -5,10 +5,13 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/golang-jwt/jwt"
+	"github.com/karlseguin/ccache/v2"
 
 	"github.com/chrislusf/seaweedfs/weed/filer"
 	"github.com/chrislusf/seaweedfs/weed/glog"
@@ -19,7 +22,11 @@ import (
 	"github.com/chrislusf/seaweedfs/weed/s3api/s3_constants"
 	"github.com/chrislusf/seaweedfs/weed/s3api/s3err"
 	"github.com/chrislusf/seaweedfs/weed/util"
+
+	authz_utils "github.com/pavelzhurov/authz-utils"
 )
+
+var MaxDuration = time.Duration(1<<62 - 1)
 
 type Action string
 
@@ -30,21 +37,27 @@ type Iam interface {
 type IdentityAccessManagement struct {
 	m sync.RWMutex
 
-	identities []*Identity
+	identities map[AccessKey]*Identity
 	domain     string
 	RSAPubKey  *rsa.PublicKey
+	Authorizer *authz_utils.Authorizer
+	KnoxClient *authz_utils.KnoxClient
 }
 
 type Identity struct {
-	Name        string
-	Credentials []*Credential
+	Name        IdentityName
+	Credentials *ccache.Cache
 	Actions     []Action
 }
 
 type Credential struct {
-	AccessKey string
-	SecretKey string
+	AccessKey AccessKey
+	SecretKey SecretKey
 }
+
+type IdentityName = string
+type AccessKey = string
+type SecretKey = string
 
 type AuthS3API interface {
 	GetACL(parentDirectoryPath string, entryName string) (ac_policy AccessControlPolicyMarshal, err error)
@@ -86,12 +99,35 @@ func (action Action) getPermission() Permission {
 func NewIdentityAccessManagement(option *S3ApiServerOption) *IdentityAccessManagement {
 	RSAParsedKey, err := jwt.ParseRSAPublicKeyFromPEM([]byte(option.JWTPublicKey))
 	if err != nil && option.JWTPublicKey != "" {
-		glog.Fatalf("Couldn't parse JWT Public Key! Error: %v", err)
+		glog.Fatalf("couldn't parse JWT Public Key! Error: %v", err)
 	}
+
+	var authorizer *authz_utils.Authorizer
+	fmt.Printf("%+v\n", option)
+	if option.IAMEnabled {
+		authorizer, err = authz_utils.NewAuthorizerFromEnv()
+		if err != nil {
+			glog.Fatalf("couldn't initialized OPA client: %v", err)
+		}
+		glog.V(3).Info("OPA authorization is enabled!")
+	}
+
+	var knoxClient *authz_utils.KnoxClient
+	if option.KMSEnabled {
+		knoxClient, err = authz_utils.NewKnoxClientFromEnv()
+		if err != nil {
+			glog.Fatalf("couldn't initialized OPA client: %v", err)
+		}
+		glog.V(3).Info("Knox synchronization is enabled!")
+	}
+
 	iam := &IdentityAccessManagement{
-		domain:    option.DomainName,
-		RSAPubKey: RSAParsedKey,
+		domain:     option.DomainName,
+		RSAPubKey:  RSAParsedKey,
+		Authorizer: authorizer,
+		KnoxClient: knoxClient,
 	}
+
 	if option.Config != "" {
 		if err := iam.loadS3ApiConfigurationFromFile(option.Config); err != nil {
 			glog.Fatalf("fail to load config file %s: %v", option.Config, err)
@@ -138,7 +174,7 @@ func (iam *IdentityAccessManagement) loadS3ApiConfigurationFromBytes(content []b
 }
 
 func (iam *IdentityAccessManagement) loadS3ApiConfiguration(config *iam_pb.S3ApiConfiguration) error {
-	var identities []*Identity
+	identities := make(map[IdentityName]*Identity)
 	for _, ident := range config.Identities {
 		t := &Identity{
 			Name:        ident.Name,
@@ -149,12 +185,9 @@ func (iam *IdentityAccessManagement) loadS3ApiConfiguration(config *iam_pb.S3Api
 			t.Actions = append(t.Actions, Action(action))
 		}
 		for _, cred := range ident.Credentials {
-			t.Credentials = append(t.Credentials, &Credential{
-				AccessKey: cred.AccessKey,
-				SecretKey: cred.SecretKey,
-			})
+			t.Credentials.Set(cred.AccessKey, cred.SecretKey, MaxDuration)
 		}
-		identities = append(identities, t)
+		identities[ident.Name] = t
 	}
 	iam.m.Lock()
 	// atomically switch
@@ -170,21 +203,59 @@ func (iam *IdentityAccessManagement) isEnabled() bool {
 }
 
 func (iam *IdentityAccessManagement) lookupByAccessKey(accessKey string) (identity *Identity, cred *Credential, found bool) {
-
-	err := iam.syncIdentitiesFromKnox()
-	if err != nil {
-		glog.Warning("could not sync with vault")
-		glog.V(3).Infof("Vault error: %v", err)
+	if iam.identities == nil {
+		return nil, nil, false
 	}
 	iam.m.RLock()
 	defer iam.m.RUnlock()
 	for _, ident := range iam.identities {
-		glog.V(3).Infof("Identity: %+v", ident)
-		for _, cred := range ident.Credentials {
-			glog.V(3).Infof("\tCredential: %+v", cred)
-			// println("checking", ident.Name, cred.AccessKey)
-			if cred.AccessKey == accessKey {
-				return ident, cred, true
+		if ident != nil && ident.Credentials != nil {
+			// Check whether identity contains access key
+			item := ident.Credentials.Get(accessKey)
+			if item != nil {
+				// If item exists, check whether it's expired or not
+				if item.Expired() {
+					// If item expired, check whether S-UP has KnoxClient
+					if iam.KnoxClient != nil {
+						updatedItem := iam.updateIndentity(accessKey, ident.Name)
+						if updatedItem != nil {
+							cred = &Credential{
+								AccessKey: accessKey,
+								SecretKey: updatedItem.Value().(string),
+							}
+							return ident, cred, true
+						}
+					}
+					// If S-UP doesn't have KnoxClient or KnoxClient didn't get
+					// refreshed access key, Delete it from Credentials
+					ident.Credentials.Delete(accessKey)
+				} else {
+					// If not expired, return identity
+					cred = &Credential{
+						AccessKey: accessKey,
+						SecretKey: item.Value().(string),
+					}
+					return ident, cred, true
+				}
+			}
+		}
+	}
+	if iam.KnoxClient != nil {
+		// updateIdentity adds keys which Knox Client returned before accessKey
+		// and, more importantly, range won't iterate over new elements in map
+		// That's why, if we didn't find accessKey, we should check Knox for new keys
+		iam.updateIndentity("", "")
+		for _, ident := range iam.identities {
+			if ident != nil && ident.Credentials != nil {
+				item := ident.Credentials.Get(accessKey)
+				// In this case, it's impossible to have Expired keys
+				if item != nil {
+					cred = &Credential{
+						AccessKey: accessKey,
+						SecretKey: item.Value().(string),
+					}
+					return ident, cred, true
+				}
 			}
 		}
 	}
@@ -192,13 +263,45 @@ func (iam *IdentityAccessManagement) lookupByAccessKey(accessKey string) (identi
 	return nil, nil, false
 }
 
+// updateIdentity syncronize keys from Knox and add them to corresponding identities.
+// If accessKey and identityName are not empty and they're presented in the list of syncronized keys,
+// this identity key will be returned and update proccess will be stopped. This is usefull when you need
+// to update particular credentials for partiсular identity.
+func (iam *IdentityAccessManagement) updateIndentity(accessKey, identityName string) (result *ccache.Item) {
+	s3keys, err := iam.KnoxClient.SyncKeysFromKnox()
+	if err != nil {
+		glog.Warning("could not sync with Knox")
+		glog.V(3).Infof("Knox error: %v", err)
+	}
+	for _, s3key := range s3keys {
+		if identity, ok := iam.identities[s3key.Name]; ok {
+			identity.Credentials.Set(s3key.AccessKey, s3key.SecretKey, 5*time.Minute)
+		} else {
+			credentials := ccache.New(ccache.Configure())
+			credentials.Set(s3key.AccessKey, s3key.SecretKey, 5*time.Minute)
+			iam.identities[s3key.Name] = &Identity{
+				Name:        s3key.Name,
+				Credentials: credentials,
+				Actions:     nil,
+			}
+		}
+
+		if accessKey != "" && identityName != "" &&
+			accessKey == s3key.AccessKey && identityName == s3key.Name {
+				if ident, ok := iam.identities[identityName]; ok {
+					result = ident.Credentials.Get(accessKey)
+					return
+				}
+		}
+	}
+	return
+}
+
 func (iam *IdentityAccessManagement) lookupAnonymous() (identity *Identity, found bool) {
 	iam.m.RLock()
 	defer iam.m.RUnlock()
-	for _, ident := range iam.identities {
-		if ident.Name == "anonymous" {
-			return ident, true
-		}
+	if ident, ok := iam.identities["anonymous"]; ok {
+		return ident, true
 	}
 	return nil, false
 }
@@ -306,7 +409,17 @@ func (iam *IdentityAccessManagement) AuthRequest(r *http.Request, action Action,
 		glog.Errorf("No tags for %s: %v", r.URL, err)
 	}
 
-	if !(id.authzAcl(action, acPolicyObject, acPolicyBucket, bucketOwner) || identity.authz(action, bucket, object, tags)) {
+	var iamDecision bool
+	if iam.Authorizer != nil {
+		iamDecision, err = iam.Authorizer.Authz("pvc", "S3", identity.Name, string(action), bucket+object, tags)
+		if err != nil {
+			glog.V(1).Infof("Can't connect to OPA: %v", err)
+		}
+	} else {
+		iamDecision = identity.canDo(action.ActionToConst(), bucket, object)
+	}
+
+	if !(id.authzAcl(action, acPolicyObject, acPolicyBucket, bucketOwner) || iamDecision) {
 		return identity, s3err.ErrAccessDenied
 	}
 
@@ -406,6 +519,23 @@ func (iam *IdentityAccessManagement) authUser(r *http.Request) (*Identity, s3err
 		return identity, s3Err
 	}
 	return identity, s3err.ErrNone
+}
+
+func (action Action) ActionToConst() Action {
+	tagging := regexp.MustCompile("^.*Tag.*$")
+	read := regexp.MustCompile("^.*(Get|Head).*$")
+	list := regexp.MustCompile("^.*List.*$")
+
+	switch {
+	case tagging.Match([]byte(action)):
+		return Action(s3_constants.ACTION_TAGGING)
+	case read.Match([]byte(action)):
+		return Action(s3_constants.ACTION_READ)
+	case list.Match([]byte(action)):
+		return Action(s3_constants.ACTION_LIST)
+	default:
+		return Action(s3_constants.ACTION_WRITE)
+	}
 }
 
 func (identity *Identity) canDo(action Action, bucket string, objectKey string) bool {
