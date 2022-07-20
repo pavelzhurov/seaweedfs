@@ -273,21 +273,17 @@ func (s3a *S3ApiServer) GetBucketAclHandler(w http.ResponseWriter, r *http.Reque
 			Local: "AccessControlPolicy",
 		}
 		for _, ident := range s3a.iam.identities {
-			if len(ident.Credentials) == 0 {
-				continue
-			}
 			for _, action := range ident.Actions {
 				if !action.overBucket(bucket) || action.getPermission() == "" {
 					continue
 				}
-				id := ident.Credentials[0].AccessKey
-				if response.Owner.DisplayName == "" && action.isOwner(bucket) && len(ident.Credentials) > 0 {
+				if response.Owner.DisplayName == "" && action.isOwner(bucket) {
 					response.Owner.DisplayName = ident.Name
-					response.Owner.ID = id
+					response.Owner.ID = ident.Name
 				}
 				response.AccessControlList.Grant = append(response.AccessControlList.Grant, Grant{
 					Grantee: Grantee{
-						ID:          id,
+						ID:          ident.Name,
 						DisplayName: ident.Name,
 						Type:        "CanonicalUser",
 						XMLXSI:      "CanonicalUser",

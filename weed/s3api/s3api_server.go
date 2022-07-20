@@ -29,6 +29,8 @@ type S3ApiServerOption struct {
 	JWTPublicKey     string
 	LocalFilerSocket *string
 	BucketsCacheTTL  uint
+	IAMEnabled       bool
+	KMSEnabled       bool
 }
 
 type S3ApiServer struct {
