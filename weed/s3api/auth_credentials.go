@@ -203,27 +203,34 @@ func (iam *IdentityAccessManagement) isEnabled() bool {
 }
 
 func (iam *IdentityAccessManagement) lookupByAccessKey(accessKey string) (identity *Identity, cred *Credential, found bool) {
-	iam.m.RLock()
-	defer iam.m.RUnlock()
 	if iam.identities == nil {
 		return nil, nil, false
 	}
+	iam.m.RLock()
+	defer iam.m.RUnlock()
 	for _, ident := range iam.identities {
 		if ident != nil && ident.Credentials != nil {
+			// Check whether identity contains access key
 			item := ident.Credentials.Get(accessKey)
 			if item != nil {
-				if item.Expired() && iam.KnoxClient != nil {
-					updatedItem := iam.updateIndentity(accessKey)
-					if updatedItem != nil {
-						cred = &Credential{
-							AccessKey: accessKey,
-							SecretKey: updatedItem.Value().(string),
+				// If item exists, check whether it's expired or not
+				if item.Expired() {
+					// If item expired, check whether S-UP has KnoxClient
+					if iam.KnoxClient != nil {
+						updatedItem := iam.updateIndentity(accessKey, ident.Name)
+						if updatedItem != nil {
+							cred = &Credential{
+								AccessKey: accessKey,
+								SecretKey: updatedItem.Value().(string),
+							}
+							return ident, cred, true
 						}
-						return ident, cred, true
-					} else {
-						ident.Credentials.Delete(accessKey)
 					}
+					// If S-UP doesn't have KnoxClient or KnoxClient didn't get
+					// refreshed access key, Delete it from Credentials
+					ident.Credentials.Delete(accessKey)
 				} else {
+					// If not expired, return identity
 					cred = &Credential{
 						AccessKey: accessKey,
 						SecretKey: item.Value().(string),
@@ -237,7 +244,7 @@ func (iam *IdentityAccessManagement) lookupByAccessKey(accessKey string) (identi
 		// updateIdentity adds keys which Knox Client returned before accessKey
 		// and, more importantly, range won't iterate over new elements in map
 		// That's why, if we didn't find accessKey, we should check Knox for new keys
-		iam.updateIndentity("")
+		iam.updateIndentity("", "")
 		for _, ident := range iam.identities {
 			if ident != nil && ident.Credentials != nil {
 				item := ident.Credentials.Get(accessKey)
@@ -256,7 +263,11 @@ func (iam *IdentityAccessManagement) lookupByAccessKey(accessKey string) (identi
 	return nil, nil, false
 }
 
-func (iam *IdentityAccessManagement) updateIndentity(accessKey string) (result *ccache.Item) {
+// updateIdentity syncronize keys from Knox and add them to corresponding identities.
+// If accessKey and identityName are not empty and they're presented in the list of syncronized keys,
+// this identity key will be returned and update proccess will be stopped. This is usefull when you need
+// to update particular credentials for partiсular identity.
+func (iam *IdentityAccessManagement) updateIndentity(accessKey, identityName string) (result *ccache.Item) {
 	s3keys, err := iam.KnoxClient.SyncKeysFromKnox()
 	if err != nil {
 		glog.Warning("could not sync with Knox")
@@ -275,9 +286,12 @@ func (iam *IdentityAccessManagement) updateIndentity(accessKey string) (result *
 			}
 		}
 
-		if accessKey != "" && accessKey == s3key.AccessKey {
-			result = iam.identities[s3key.Name].Credentials.Get(accessKey)
-			return
+		if accessKey != "" && identityName != "" &&
+			accessKey == s3key.AccessKey && identityName == s3key.Name {
+				if ident, ok := iam.identities[identityName]; ok {
+					result = ident.Credentials.Get(accessKey)
+					return
+				}
 		}
 	}
 	return
