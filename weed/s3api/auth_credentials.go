@@ -26,7 +26,7 @@ import (
 	authz_utils "github.com/pavelzhurov/authz-utils"
 )
 
-var MaxDuration = time.Duration(1<<63 - 1)
+var MaxDuration = time.Duration(1<<62 - 1)
 
 type Action string
 
