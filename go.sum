@@ -751,8 +751,8 @@ github.com/opentracing/opentracing-go v1.2.0/go.mod h1:GxEUsuufX4nBwe+T+Wl9TAgYr
 github.com/openzipkin/zipkin-go v0.2.5/go.mod h1:KpXfKdgRDnnhsxw4pNIH9Md5lyFqKUa4YDFlwRYAMyE=
 github.com/pascaldekloe/goe v0.0.0-20180627143212-57f6aae5913c/go.mod h1:lzWF7FIEvWOWxwDKqyGYQf6ZUaNfKdP144TG7ZOy1lc=
 github.com/pascaldekloe/goe v0.1.0/go.mod h1:lzWF7FIEvWOWxwDKqyGYQf6ZUaNfKdP144TG7ZOy1lc=
-github.com/pavelzhurov/authz-utils v0.1.3 h1:QJNzIRO0JDPmYUR5pgL3VU1F/3wWOjO8sqWchyGgxbc=
-github.com/pavelzhurov/authz-utils v0.1.3/go.mod h1:fXgqSaLu7dj5Ku8pS58CJfGPkLDSMKin71IqzX3KJS8=
+github.com/pavelzhurov/authz-utils v0.1.4 h1:NG32b9blIKWkU0aiuLw0zyR6g3TkfLJYIMq1bHZQ2AQ=
+github.com/pavelzhurov/authz-utils v0.1.4/go.mod h1:fXgqSaLu7dj5Ku8pS58CJfGPkLDSMKin71IqzX3KJS8=
 github.com/pelletier/go-toml v1.2.0/go.mod h1:5z9KED0ma1S8pY6P1sdut58dfprrGBbd/94hg7ilaic=
 github.com/pelletier/go-toml v1.7.0 h1:7utD74fnzVc/cpcyy8sjrlFr5vYpypUixARcHIMIGuI=
 github.com/pelletier/go-toml v1.7.0/go.mod h1:vwGMzjaWMwyfHwgIBhI2YUM4fB6nL6lVAvS1LBMMhTE=

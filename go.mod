@@ -157,7 +157,7 @@ require (
 require (
 	github.com/fluent/fluent-logger-golang v1.8.0
 	github.com/hanwen/go-fuse/v2 v2.1.0
-	github.com/pavelzhurov/authz-utils v0.1.3
+	github.com/pavelzhurov/authz-utils v0.1.4
 )
 
 require (

@@ -32,6 +32,8 @@ import (
 	"github.com/chrislusf/seaweedfs/weed/pb/filer_pb"
 	weed_server "github.com/chrislusf/seaweedfs/weed/server"
 	"github.com/chrislusf/seaweedfs/weed/util"
+
+	authz_utils "github.com/pavelzhurov/authz-utils"
 )
 
 var (
@@ -274,7 +276,7 @@ func (s3a *S3ApiServer) setUpCryptorClient() (cryptorEndpoint string, err error)
 		}
 		caCertPool := x509.NewCertPool()
 		caCertPool.AppendCertsFromPEM([]byte(caCertString))
-		certs, err := LoadCertificates([]string{"/certs/*.key", "/certs/*.pem"})
+		certs, err := authz_utils.LoadCertificates("/certs/*.key", "/certs/*.pem")
 		if err == nil {
 			tlsConfig.Certificates = certs
 			tlsConfig.RootCAs = caCertPool
