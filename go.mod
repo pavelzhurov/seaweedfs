@@ -72,14 +72,14 @@ require (
 	github.com/lib/pq v1.10.4
 	github.com/linxGnu/grocksdb v1.6.38
 	github.com/magiconair/properties v1.8.1 // indirect
-	github.com/mailru/easyjson v0.7.1 // indirect
+	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/mattn/go-ieproxy v0.0.1 // indirect
 	github.com/mattn/go-isatty v0.0.12 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.1 // indirect
 	github.com/mitchellh/mapstructure v1.4.1 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
-	github.com/olivere/elastic/v7 v7.0.19
+	github.com/olivere/elastic/v7 v7.0.32
 	github.com/pelletier/go-toml v1.7.0 // indirect
 	github.com/peterh/liner v1.2.2
 	github.com/pierrec/lz4 v2.2.7+incompatible // indirect
@@ -185,6 +185,7 @@ require (
 	github.com/jcmturner/dnsutils/v2 v2.0.0 // indirect
 	github.com/jcmturner/goidentity/v6 v6.0.1 // indirect
 	github.com/jcmturner/rpc/v2 v2.0.3 // indirect
+	github.com/josharian/intern v1.0.0 // indirect
 	github.com/mattn/go-runewidth v0.0.7 // indirect
 	github.com/mattn/go-sqlite3 v2.0.1+incompatible // indirect
 	github.com/nats-io/nats.go v1.11.0 // indirect
